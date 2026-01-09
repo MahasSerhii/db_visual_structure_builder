@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Component Dependency Graph</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load D3.js for graph visualization -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <!-- Load html2canvas for image download -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        /* Custom styles for the graph visualization */
+        .node-group { cursor: grab; }
+        .node-group:active { cursor: grabbing; }
+        .node-rect { 
+            stroke: #4B5563; /* Stroke for boxes */
+            stroke-width: 3px; 
+            rx: 12; /* Rounded corners */
+            filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.15)); /* Soft shadow */
+            transition: all 0.1s ease-out;
+        }
+        .link-line { stroke: #9CA3AF; stroke-width: 2px; fill: none; transition: stroke-width 0.2s; } 
+        .link-line:hover { stroke-width: 4px; stroke: #6366F1; cursor: pointer; }
+        .link-text { fill: #4B5563; font-size: 10px; font-family: 'Inter', sans-serif; pointer-events: none;}
+        .prop-color-input { -webkit-appearance: none; appearance: none; border: 1px solid #D1D5DB; border-radius: 4px; padding: 1px; }
+        .curve-handle { opacity: 0; transition: opacity 0.2s; }
+        .link-path:hover + .curve-handle { opacity: 1; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex text-gray-900 font-sans">
+
+    <!-- Sidebar (Component Manager) -->
+    <div id="sidebar" class="w-80 bg-white p-6 flex flex-col space-y-6 overflow-y-auto border-r border-gray-200 shadow-xl">
+        <h2 class="text-2xl font-bold border-b border-gray-200 pb-3 text-indigo-600">Component Manager</h2>
+        
+        <!-- Status Message / Toast Container -->
+        <div id="status-message" class="text-sm p-3 rounded-lg bg-emerald-100 text-emerald-700 font-medium">
+            Local Database Ready (IndexedDB)
+        </div>
+        <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+        <div class="space-y-4">
+            <h3 class="text-lg font-semibold text-indigo-500">Create New Component</h3>
+            <input type="text" id="node-title" class="w-full bg-gray-50 border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg p-2 text-sm transition" placeholder="Title (Required)">
+            <textarea id="node-description" class="w-full bg-gray-50 border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg p-2 text-sm h-16 transition" placeholder="Description"></textarea>
+            
+            <div class="flex items-center space-x-2">
+                <label class="text-sm text-gray-600">Box Color:</label>
+                <input type="color" id="node-color" class="flex-grow h-8 bg-gray-50 border border-gray-300 rounded-lg p-1 cursor-pointer transition" value="#6366F1">
+            </div>
+
+            <div id="prop-section" class="border border-gray-200 p-3 rounded-lg bg-gray-50">
+                <p class="text-xs font-semibold text-gray-600 mb-2">Properties (Max 10)</p>
+                <div id="prop-list" class="space-y-2"></div>
+                <button id="add-prop-btn" onclick="addPropInput()" class="w-full mt-3 px-3 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-medium rounded-lg transition">+ Add Property</button>
+            </div>
+
+            <button onclick="createNewComponent()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-200 transition transform hover:scale-[1.01]">
+                Create Component Box
+            </button>
+        </div>
+
+        <div class="space-y-4 pt-4 border-t border-gray-200">
+            <h3 class="text-lg font-semibold text-emerald-500">Create Dependency</h3>
+            <select id="conn-source" onchange="updatePropSelects('source')" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2 text-sm">
+                <option value="">-- Select Source --</option>
+            </select>
+            <select id="conn-source-prop" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2 text-xs" disabled>
+                <option value="">-- Select Source Property (Optional) --</option>
+            </select>
+            <select id="conn-target" onchange="updatePropSelects('target')" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2 text-sm">
+                <option value="">-- Select Target --</option>
+            </select>
+            <select id="conn-target-prop" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2 text-xs" disabled>
+                <option value="">-- Select Target Property (Optional) --</option>
+            </select>
+            <input type="text" id="conn-label" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2 text-sm" placeholder="Label (e.g., imports)">
+            <button onclick="createConnection()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-xl shadow-lg shadow-emerald-200 transition transform hover:scale-[1.01]">Connect Components</button>
+        </div>
+
+        <div class="space-y-4 pt-4 border-t border-gray-200">
+            <button onclick="downloadImage()" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl text-sm font-semibold transition">Download PNG Diagram</button>
+            <!-- New Reset Button -->
+            <button onclick="resetDashboard()" class="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-3 rounded-xl text-sm font-semibold transition">Reset Dashboard</button>
+        </div>
+    </div>
+
+    <!-- Main Diagram Area -->
+    <div id="app" class="flex-grow flex flex-col p-8">
+        <h1 class="text-3xl font-bold mb-4 border-b border-gray-200 pb-3 text-gray-800">Visual Component Graph</h1>
+        <div id="diagram-container" class="flex-grow bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+            <!-- D3.js SVG will be appended here -->
+        </div>
+    </div>
+
+    <!-- Node Detail Modal -->
+    <div id="node-detail-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl border border-gray-200 w-full max-w-lg shadow-2xl">
+            <h2 class="text-2xl font-bold mb-4 text-indigo-600">Edit Component Details</h2>
+            <input type="text" id="modal-title" class="w-full bg-gray-100 p-3 rounded-lg mb-3 text-indigo-500 font-bold border border-gray-200">
+            <p id="modal-id" class="text-xs text-gray-500 mb-4 font-mono select-all">ID: <span id="modal-id-span"></span></p>
+            <textarea id="modal-description" class="w-full bg-gray-100 p-3 rounded-lg mb-6 h-24 text-sm border border-gray-200"></textarea>
+            
+            <!-- Duplicate Button -->
+            <button onclick="duplicateComponent(selectedNodeIdForModal); closeModal('node');" class="w-full mb-4 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium transition">
+                Copy Component
+            </button>
+
+            <div class="flex justify-between">
+                <button onclick="deleteComponentConfirmed()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition">Delete Component</button>
+                <div class="space-x-3">
+                    <button onclick="updateComponentDetails()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition">Save Changes</button>
+                    <button onclick="closeModal('node')" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg font-medium transition">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Detail Modal -->
+    <div id="connection-detail-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl border border-gray-200 w-full max-w-lg shadow-2xl">
+            <h2 class="text-2xl font-bold mb-4 text-emerald-600">Edit Dependency</h2>
+            <p class="text-sm font-medium mb-4">
+                <span id="modal-conn-source-name" class="font-bold text-indigo-500"></span> 
+                <span class="text-gray-400">to</span> 
+                <span id="modal-conn-target-name" class="font-bold text-indigo-500"></span>
+            </p>
+            <p id="modal-conn-id" class="text-xs text-gray-500 mb-4 font-mono select-all">ID: </p>
+            
+            <label class="block text-sm font-medium text-gray-700 mb-1">Connection Label</label>
+            <input type="text" id="modal-conn-label" class="w-full bg-gray-100 p-3 rounded-lg mb-4 text-sm border border-gray-200">
+
+            <label class="block text-sm font-medium text-gray-700 mb-1">Source Property</label>
+            <select id="modal-conn-source-prop" class="w-full bg-gray-100 p-3 rounded-lg mb-4 text-sm border border-gray-200"></select>
+
+            <label class="block text-sm font-medium text-gray-700 mb-1">Target Property</label>
+            <select id="modal-conn-target-prop" class="w-full bg-gray-100 p-3 rounded-lg mb-6 text-sm border border-gray-200"></select>
+
+
+            <div class="flex justify-between">
+                <button onclick="deleteConnectionConfirmed()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition">Delete Dependency</button>
+                <div class="space-x-3">
+                    <button onclick="updateConnectionDetails()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition">Save Changes</button>
+                    <button onclick="closeModal('conn')" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg font-medium transition">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Reset Confirmation Modal -->
+    <div id="reset-confirmation-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl border border-gray-200 w-full max-w-lg shadow-2xl">
+            <h2 class="text-2xl font-bold mb-4 text-red-600">Confirm Dashboard Reset</h2>
+            <p class="text-gray-700 mb-6">
+                Are you absolutely sure you want to clear the entire dashboard?
+                <strong class="font-bold text-red-700">This action cannot be undone</strong> and will permanently delete all components and connections stored locally.
+            </p>
+            
+            <div class="flex justify-between">
+                <button onclick="closeModal('reset')" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-lg font-medium transition">Cancel</button>
+                <button onclick="resetDashboardConfirmed()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition">Yes, Clear Dashboard</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- Configuration & Constants ---
+        const DB_NAME = 'ComponentGraphDB';
+        const BOX_HEIGHT = 150; // Height of the component box
+        const MIN_BOX_WIDTH = 220; // Width of the component box
+        const MAX_PROPS = 10;
+        const PROP_LINE_HEIGHT = 15; // Vertical space per property line
+        const ARROW_PULLBACK = 8; // Distance to pull back the line for the arrowhead tip to land on border
+        const START_GAP = 2; // Distance to push forward the line for the start dot to not touch the border
+        let db;
+        let nodes = [];
+        let edges = [];
+        let selectedNodeIdForModal = null;
+        let selectedEdgeIdForModal = null; // New state for connection editing
+
+        // Global drag state for interactive connection creation
+        let dragState = {
+            isDragging: false,
+            sourceNodeId: null,
+            sourcePropName: null
+        };
+        let tempLink = null; // D3 selection for the temporary drag line
+
+
+        /** Custom toast notification function. */
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const color = type === 'success' ? 'bg-emerald-500' : 'bg-red-500';
+            const icon = type === 'success' 
+                ? '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                : '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+
+            const toast = document.createElement('div');
+            toast.className = `${color} text-white px-4 py-3 rounded-lg shadow-lg flex items-center transition-opacity duration-300`;
+            toast.innerHTML = `${icon}<span>${message}</span>`;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                toast.addEventListener('transitionend', () => toast.remove());
+            }, 3000);
+        }
+
+        // --- IndexedDB Wrapper ---
+
+        /** Initializes the IndexedDB database. */
+        const initDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    // Create object stores if they don't exist
+                    if (!db.objectStoreNames.contains('nodes')) db.createObjectStore('nodes', { keyPath: 'id' });
+                    if (!db.objectStoreNames.contains('edges')) db.createObjectStore('edges', { keyPath: 'id' });
+                    console.log("IndexedDB upgraded/initialized.");
+                };
+                request.onsuccess = (e) => { 
+                    db = e.target.result; 
+                    showToast("Local Database Ready (IndexedDB).", 'success');
+                    resolve(); 
+                };
+                request.onerror = (e) => {
+                    showToast("Database connection failed. Check console.", 'error');
+                    console.error("IndexedDB Error:", e.target.error);
+                    reject(e);
+                };
+            });
+        };
+
+        /** Performs a single IndexedDB operation (get, put, delete, getAll). */
+        const dbOp = (storeName, mode, op, data) => {
+            return new Promise((resolve, reject) => {
+                if (!db) {
+                    reject("Database not initialized.");
+                    return;
+                }
+                const tx = db.transaction(storeName, mode);
+                const store = tx.objectStore(storeName);
+                const request = store[op](data);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => {
+                    showToast(`DB operation failed: ${op} on ${storeName}`, 'error');
+                    reject(request.error);
+                };
+            });
+        };
+
+        // --- Utility Logic ---
+        /** Generates a unique ID in the specified format. */
+        function generateId() {
+            // Using crypto.randomUUID() and the required prefix
+            // Ensure ID uses the requested format for consistency.
+            const uuid = crypto.randomUUID();
+            return `nav_${uuid.slice(0, 8)}-${uuid.slice(9, 13)}-${uuid.slice(14, 18)}-${uuid.slice(19, 23)}-${uuid.slice(24, 36)}`;
+        }
+
+        /** Fetches all data from DB and updates the graph and selectors. */
+        async function refreshData() {
+            try {
+                nodes = await dbOp('nodes', 'readonly', 'getAll');
+                edges = await dbOp('edges', 'readonly', 'getAll');
+                updateSelects();
+                updateGraph(nodes, edges);
+                console.log(`Data refreshed. Nodes: ${nodes.length}, Edges: ${edges.length}`);
+            } catch (error) {
+                console.error("Error refreshing data:", error);
+                showToast("Failed to load graph data.", 'error');
+            }
+        }
+
+        /** Helper to push/pull a point P(px, py) away from center C(cx, cy) by distance D. */
+        function adjustPoint(px, py, cx, cy, distance) {
+            const dx = px - cx;
+            const dy = py - cy;
+            const currentDist = Math.sqrt(dx * dx + dy * dy);
+            
+            const scale = (currentDist > 0) ? (currentDist + distance) / currentDist : 1;
+            
+            return {
+                x: cx + dx * scale,
+                y: cy + dy * scale
+            };
+        }
+
+        /** Helper to calculate the y-coordinate for a specific property on the component box 
+         * Returns the Y offset from the center of the node box (node.y)
+        */
+        function getPropertyY(node, propName) {
+            const props = node.props || [];
+            const propIndex = props.findIndex(p => p.name === propName);
+            if (propIndex >= 0) {
+                // The prop text starts at -BOX_HEIGHT/2 + 70 + (index * PROP_LINE_HEIGHT)
+                // The dot is centered vertically (4px radius) which is propY - 4
+                const propYOffset = -BOX_HEIGHT/2 + 70; 
+                const textY = propYOffset + (propIndex * PROP_LINE_HEIGHT);
+                return textY - 4; // This is the Y offset for the center of the drag dot
+            }
+            return 0; // Return 0 offset if property not found or visible
+        }
+
+        // --- Component Management Functions ---
+        
+        async function createNewComponent() {
+            const titleInput = document.getElementById('node-title');
+            const title = titleInput.value.trim();
+
+            if (!title) {
+                showToast("Component Title is required!", 'error');
+                titleInput.focus();
+                return; 
+            }
+            
+            const containerEl = document.getElementById('diagram-container');
+
+            const newNode = {
+                id: generateId(),
+                title: title,
+                description: document.getElementById('node-description').value,
+                color: document.getElementById('node-color').value,
+                props: Array.from(document.querySelectorAll('#prop-list .prop-entry')).map(el => ({
+                    name: el.querySelector('.p-name').value.trim(),
+                    type: el.querySelector('.p-type').value.trim() || 'any',
+                    color: el.querySelector('.p-color').value
+                })).filter(p => p.name),
+                // Initial positions for the D3 simulation
+                x: containerEl.clientWidth / 2 + (Math.random() - 0.5) * 50, 
+                y: containerEl.clientHeight / 2 + (Math.random() - 0.5) * 50
+            };
+
+            try {
+                await dbOp('nodes', 'readwrite', 'put', newNode);
+                showToast(`Component '${title}' created.`, 'success');
+                // Clear inputs
+                document.getElementById('node-title').value = '';
+                document.getElementById('node-description').value = '';
+                document.getElementById('node-color').value = '#6366F1';
+                document.getElementById('prop-list').innerHTML = '';
+                for(let i=0; i<3; i++) addPropInput(); // Reset property inputs
+                refreshData();
+            } catch (error) {
+                showToast("Failed to save new component.", 'error');
+            }
+        }
+        
+        async function duplicateComponent(nodeId) {
+            const originalNode = nodes.find(n => n.id === nodeId);
+            if (!originalNode) {
+                showToast("Original component not found.", 'error');
+                return;
+            }
+
+            const newNode = {
+                id: generateId(),
+                title: originalNode.title + ' (Copy)',
+                description: originalNode.description,
+                color: originalNode.color,
+                props: originalNode.props.map(p => ({...p})), // Deep copy props
+                // Offset position slightly from original
+                x: originalNode.x + 50, 
+                y: originalNode.y + 50,
+                fx: null, fy: null // Clear fixed position
+            };
+
+            try {
+                await dbOp('nodes', 'readwrite', 'put', newNode);
+                showToast(`Component '${newNode.title}' duplicated.`, 'success');
+                refreshData();
+            } catch (error) {
+                showToast("Failed to duplicate component.", 'error');
+            }
+        }
+
+        async function createConnection() {
+            const source = document.getElementById('conn-source').value;
+            const target = document.getElementById('conn-target').value;
+            const label = document.getElementById('conn-label').value.trim();
+            const sourceProp = document.getElementById('conn-source-prop').value; 
+            const targetProp = document.getElementById('conn-target-prop').value; 
+
+            if (!source || !target) {
+                showToast("Please select both source and target components.", 'error');
+                return;
+            }
+            if (source === target) {
+                 showToast("Cannot connect a component to itself.", 'error');
+                return;
+            }
+
+            const newEdge = {
+                id: generateId(),
+                source, target,
+                label: label || '',
+                sourceProp: sourceProp || null, 
+                targetProp: targetProp || null,
+                // Add optional control point coordinates for manual curve adjustment
+                qX: null,
+                qY: null
+            };
+            
+            try {
+                await dbOp('edges', 'readwrite', 'put', newEdge);
+                showToast(`Dependency created.`, 'success');
+                // Clear inputs
+                document.getElementById('conn-label').value = '';
+                document.getElementById('conn-source-prop').value = '';
+                document.getElementById('conn-target-prop').value = '';
+                document.getElementById('conn-source-prop').disabled = true;
+                document.getElementById('conn-target-prop').disabled = true;
+                refreshData();
+            } catch (error) {
+                showToast("Failed to save dependency.", 'error');
+            }
+        }
+        
+        async function updateConnectionDetails() {
+            const id = selectedEdgeIdForModal;
+            // Find the D3-bound edge data (which includes the full source/target objects)
+            const edgeToUpdate = edges.find(e => e.id === id); 
+
+            if (!edgeToUpdate) {
+                showToast("Connection not found.", 'error');
+                return;
+            }
+            
+            // FIX: Extract the raw ID strings from the D3-bound objects before saving.
+            // Check if source/target is an object (D3 has run) or a string (raw DB data).
+            const sourceId = typeof edgeToUpdate.source === 'object' ? edgeToUpdate.source.id : edgeToUpdate.source;
+            const targetId = typeof edgeToUpdate.target === 'object' ? edgeToUpdate.target.id : edgeToUpdate.target;
+
+
+            // Construct the database payload with only raw data (no D3 artifacts)
+            const dbPayload = {
+                id: id,
+                label: document.getElementById('modal-conn-label').value.trim(),
+                sourceProp: document.getElementById('modal-conn-source-prop').value || null,
+                targetProp: document.getElementById('modal-conn-target-prop').value || null,
+                // Use extracted raw IDs for the database
+                source: sourceId,
+                target: targetId,
+                // Preserve curve control points if manually set
+                qX: edgeToUpdate.qX || null,
+                qY: edgeToUpdate.qY || null
+            };
+
+
+            try {
+                // Save the clean payload
+                await dbOp('edges', 'readwrite', 'put', dbPayload);
+                showToast(`Dependency updated.`, 'success');
+                closeModal('conn');
+                refreshData();
+            } catch (error) {
+                showToast("Failed to update dependency.", 'error');
+            }
+        }
+
+        async function deleteConnectionConfirmed() {
+            try {
+                await dbOp('edges', 'readwrite', 'delete', selectedEdgeIdForModal);
+                showToast(`Dependency deleted.`, 'success');
+                closeModal('conn');
+                refreshData();
+            } catch (error) {
+                showToast("Failed to delete dependency.", 'error');
+            }
+        }
+
+
+        function addPropInput() {
+            const list = document.getElementById('prop-list');
+            if(list.children.length >= MAX_PROPS) {
+                showToast(`Maximum ${MAX_PROPS} properties allowed.`, 'error');
+                return;
+            }
+            const div = document.createElement('div');
+            div.className = 'prop-entry flex space-x-2 items-center';
+            div.innerHTML = `
+                <input type="text" class="p-name w-2/5 bg-white border border-gray-300 text-xs p-1 rounded" placeholder="Name">
+                <input type="text" class="p-type w-2/5 bg-white border border-gray-300 text-xs p-1 rounded" placeholder="Type (e.g., string)">
+                <input type="color" class="p-color w-1/5 h-6 rounded-md cursor-pointer" value="#FFFFFF">
+            `;
+            list.appendChild(div);
+        }
+
+        function updatePropSelects(type) {
+            const componentId = document.getElementById(`conn-${type}`).value;
+            const propSelect = document.getElementById(`conn-${type}-prop`);
+            
+            // Note: The empty value means 'any property'
+            propSelect.innerHTML = '<option value="">-- Select Property (Any) --</option>';
+            propSelect.disabled = true;
+
+            if (componentId) {
+                const component = nodes.find(n => n.id === componentId);
+                if (component && component.props.length > 0) {
+                    component.props.forEach(prop => {
+                        const option = document.createElement('option');
+                        option.value = prop.name;
+                        option.textContent = `${prop.name}: ${prop.type}`;
+                        propSelect.appendChild(option);
+                    });
+                    propSelect.disabled = false;
+                }
+            }
+        }
+        
+        function updateSelects() {
+            const html = ['<option value="">-- Select --</option>', ...nodes.map(n => `<option value="${n.id}">${n.title}</option>`)].join('');
+            document.getElementById('conn-source').innerHTML = html;
+            document.getElementById('conn-target').innerHTML = html;
+
+            updatePropSelects('source');
+            updatePropSelects('target');
+        }
+
+        function showNodeDetails(d) {
+            selectedNodeIdForModal = d.id;
+            document.getElementById('modal-title').value = d.title;
+            document.getElementById('modal-id-span').innerText = d.id;
+            document.getElementById('modal-description').value = d.description || '';
+            document.getElementById('node-detail-modal').classList.remove('hidden');
+        }
+
+        function showConnectionDetails(d) {
+            selectedEdgeIdForModal = d.id;
+            
+            // d.source and d.target are the full node objects from D3 simulation
+            const sourceNode = d.source;
+            const targetNode = d.target;
+            
+            document.getElementById('modal-conn-id').innerText = `ID: ${d.id}`;
+            document.getElementById('modal-conn-source-name').innerText = sourceNode.title;
+            document.getElementById('modal-conn-target-name').innerText = targetNode.title;
+            document.getElementById('modal-conn-label').value = d.label || '';
+
+            // Populate property selects
+            const srcPropSelect = document.getElementById('modal-conn-source-prop');
+            const tgtPropSelect = document.getElementById('modal-conn-target-prop');
+
+            const srcOptions = ['<option value="">-- Select Property (Any) --</option>', 
+                ...(sourceNode.props || []).map(p => `<option value="${p.name}">${p.name}: ${p.type}</option>`)
+            ].join('');
+            
+            const tgtOptions = ['<option value="">-- Select Property (Any) --</option>', 
+                ...(targetNode.props || []).map(p => `<option value="${p.name}">${p.name}: ${p.type}</option>`)
+            ].join('');
+
+            srcPropSelect.innerHTML = srcOptions;
+            tgtPropSelect.innerHTML = tgtOptions;
+
+            // Set current selected values
+            srcPropSelect.value = d.sourceProp || '';
+            tgtPropSelect.value = d.targetProp || '';
+            
+            document.getElementById('connection-detail-modal').classList.remove('hidden');
+        }
+
+        function closeModal(type) { 
+            if (type === 'node') {
+                document.getElementById('node-detail-modal').classList.add('hidden'); 
+                selectedNodeIdForModal = null;
+            } else if (type === 'conn') {
+                document.getElementById('connection-detail-modal').classList.add('hidden');
+                selectedEdgeIdForModal = null;
+            } else if (type === 'reset') { // New: Handle reset modal close
+                 document.getElementById('reset-confirmation-modal').classList.add('hidden');
+            }
+        }
+
+        async function updateComponentDetails() {
+            const id = selectedNodeIdForModal;
+            const title = document.getElementById('modal-title').value.trim();
+            const description = document.getElementById('modal-description').value.trim();
+
+            if (!title) {
+                showToast("Title cannot be empty.", 'error');
+                return;
+            }
+
+            const nodeToUpdate = nodes.find(n => n.id === id);
+            if (nodeToUpdate) {
+                nodeToUpdate.title = title;
+                nodeToUpdate.description = description;
+
+                try {
+                    // Update only essential fields, preserving D3 positions (x, y, fx, fy)
+                    await dbOp('nodes', 'readwrite', 'put', nodeToUpdate);
+                    showToast(`Component '${title}' updated.`, 'success');
+                    closeModal('node');
+                    refreshData();
+                } catch (error) {
+                    showToast("Failed to update component.", 'error');
+                }
+            }
+        }
+
+        async function deleteComponentConfirmed() {
+            try {
+                await dbOp('nodes', 'readwrite', 'delete', selectedNodeIdForModal);
+                // Also delete all edges connected to this node
+                // Note: Edges in `edges` array are D3 objects, so we need their raw ID
+                const edgesToDelete = edges.filter(e => e.source.id === selectedNodeIdForModal || e.target.id === selectedNodeIdForModal);
+                for (const edge of edgesToDelete) {
+                    // Need to use the raw ID for DB delete, not the D3 bound object
+                    await dbOp('edges', 'readwrite', 'delete', edge.id);
+                }
+
+                showToast(`Component and ${edgesToDelete.length} dependencies deleted.`, 'success');
+                closeModal('node');
+                refreshData();
+            } catch (error) {
+                showToast("Failed to delete component.", 'error');
+            }
+        }
+        
+        function downloadImage() {
+            const sidebar = document.getElementById('sidebar');
+            const header = document.querySelector('#app h1');
+            const toastContainer = document.getElementById('toast-container');
+            
+            const nodeModal = document.getElementById('node-detail-modal');
+            const connModal = document.getElementById('connection-detail-modal');
+            const resetModal = document.getElementById('reset-confirmation-modal');
+
+            // Store original display state
+            const originalNodeDisplay = nodeModal.style.display;
+            const originalConnDisplay = connModal.style.display;
+            const originalResetDisplay = resetModal.style.display;
+
+            // Hide UI elements that shouldn't be in the screenshot
+            sidebar.style.display = 'none';
+            if (header) header.style.display = 'none';
+            toastContainer.style.display = 'none';
+            nodeModal.style.display = 'none';
+            connModal.style.display = 'none';
+            resetModal.style.display = 'none';
+
+            const containerElement = document.getElementById('diagram-container');
+            
+            html2canvas(containerElement, {
+                backgroundColor: '#ffffff', 
+                scale: 2 
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.href = canvas.toDataURL('image/png');
+                link.download = 'component_graph.png';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                showToast('Diagram downloaded successfully!', 'success');
+
+                // Restore UI elements based on their original state
+                sidebar.style.display = 'flex';
+                if (header) header.style.display = 'block';
+                toastContainer.style.display = 'block';
+                
+                // Only restore modals if they were previously open (i.e., their style.display was 'flex')
+                nodeModal.style.display = originalNodeDisplay;
+                connModal.style.display = originalConnDisplay;
+                resetModal.style.display = originalResetDisplay;
+
+            }).catch(err => {
+                console.error("Error during image download:", err);
+                showToast("Failed to download image. Check console for details.", 'error');
+                
+                // Restore UI elements on failure
+                sidebar.style.display = 'flex';
+                if (header) header.style.display = 'block';
+                toastContainer.style.display = 'block';
+                
+                nodeModal.style.display = originalNodeDisplay;
+                connModal.style.display = originalConnDisplay;
+                resetModal.style.display = originalResetDisplay;
+            });
+        }
+        
+        // Function called by the "Reset Dashboard" button in the sidebar
+        async function resetDashboard() {
+            // Show the custom confirmation modal
+            document.getElementById('reset-confirmation-modal').classList.remove('hidden');
+        }
+
+        // Function called by the "Yes, Clear Dashboard" button in the modal
+        async function resetDashboardConfirmed() {
+            closeModal('reset'); // Close the confirmation modal
+
+            try {
+                if (!db) {
+                     showToast("Database not initialized.", 'error');
+                     return;
+                }
+                const tx = db.transaction(['nodes', 'edges'], 'readwrite');
+                tx.objectStore('nodes').clear();
+                tx.objectStore('edges').clear();
+                
+                tx.oncomplete = () => {
+                    showToast("Dashboard reset successfully.", 'success');
+                    refreshData();
+                };
+                
+                tx.onerror = (e) => {
+                     console.error("Reset failed:", e);
+                     showToast("Failed to reset dashboard.", 'error');
+                };
+
+            } catch (error) {
+                console.error("Error resetting dashboard:", error);
+                showToast("An error occurred while resetting.", 'error');
+            }
+        }
+        
+        // --- D3 Logic ---
+        const container = document.getElementById('diagram-container');
+        // Initialize D3 setup
+        const svg = d3.select(container).append("svg").attr("width", "100%").attr("height", "100%");
+        const g = svg.append("g");
+        const zoom = d3.zoom().on("zoom", (event) => g.attr("transform", event.transform));
+        svg.call(zoom);
+
+        // Define arrowhead marker
+        svg.append("defs").append("marker")
+            .attr("id", "arrowhead")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 10) 
+            .attr("refY", 0)
+            .attr("orient", "auto")
+            .attr("markerWidth", 6) 
+            .attr("markerHeight", 6)
+            .append("path")
+            .attr("d", "M 0,-5 L 10,0 L 0,5")
+            .attr("fill", "#9CA3AF"); 
+
+        // Define start dot marker
+        svg.append("defs").append("marker")
+            .attr("id", "startDot")
+            .attr("viewBox", "0 0 10 10")
+            .attr("refX", 5) 
+            .attr("refY", 5)
+            .attr("markerWidth", 5) 
+            .attr("markerHeight", 5)
+            .append("circle")
+            .attr("cx", 5)
+            .attr("cy", 5)
+            .attr("r", 4)
+            .attr("fill", "#9CA3AF"); 
+
+        // Define the force simulation
+        const simulation = d3.forceSimulation()
+            .force("link", d3.forceLink().id(d => d.id).distance(200))
+            .force("charge", d3.forceManyBody().strength(-800)) 
+            .force("center", d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2))
+            .force("collide", d3.forceCollide(BOX_HEIGHT / 2 + 10).iterations(2)); 
+
+        // --- Drag-to-Connect Logic ---
+
+        function startPropDrag(event, sourceNode, propName) {
+            event.sourceEvent.stopPropagation(); // Prevent node drag
+            simulation.alphaTarget(0); // Stop simulation
+
+            dragState.isDragging = true;
+            dragState.sourceNodeId = sourceNode.id;
+            dragState.sourcePropName = propName;
+            
+            // Get starting coordinates (relative to 'g')
+            const propYOffset = getPropertyY(sourceNode, propName);
+            const startX = sourceNode.x + MIN_BOX_WIDTH/2 - 5; // Right edge, 5px inset (dot center)
+            const startY = sourceNode.y + propYOffset; 
+
+            // Initialize tempLink
+            if(tempLink) tempLink.remove();
+
+            tempLink = g.append("path") 
+                .attr("class", "temp-link")
+                .attr("stroke", "#EF4444") // Red temporary line
+                .attr("stroke-width", 3)
+                .attr("stroke-dasharray", "5,5")
+                .attr("fill", "none")
+                .attr("d", `M ${startX} ${startY} L ${startX} ${startY}`)
+                .attr("pointer-events", "none"); 
+        }
+
+        function duringPropDrag(event) {
+            if (!dragState.isDragging) return;
+            
+            const [tx, ty] = d3.pointer(event, g.node());
+            const sourceNode = nodes.find(n => n.id === dragState.sourceNodeId);
+            const propYOffset = getPropertyY(sourceNode, dragState.sourcePropName);
+            const s_x = sourceNode.x + MIN_BOX_WIDTH/2 - 5;
+            const s_y = sourceNode.y + propYOffset;
+            
+            // Calculate mid-point and control point for the curve
+            const midX = (s_x + tx) / 2;
+            const midY = (s_y + ty) / 2;
+            const dx = tx - s_x;
+            const dy = ty - s_y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const nx = -dy / len; 
+            const ny = dx / len;
+            const offset = Math.min(60, len / 5) + 20;
+            const qx = midX + nx * offset;
+            const qy = midY + ny * offset;
+
+            tempLink.attr("d", `M ${s_x} ${s_y} Q ${qx} ${qy} ${tx} ${ty}`);
+
+            // Find target node under cursor for visual feedback
+            const targetNode = nodes.find(n => {
+                return Math.abs(tx - n.x) < MIN_BOX_WIDTH/2 && Math.abs(ty - n.y) < BOX_HEIGHT/2;
+            });
+
+            // Apply visual hover cue on potential target
+            d3.selectAll('.node-group .node-rect').classed('border-4 border-red-500', false);
+            if (targetNode && targetNode.id !== dragState.sourceNodeId) {
+                d3.select(`#node-${targetNode.id} .node-rect`).classed('border-4 border-red-500', true);
+            }
+        }
+
+        async function endPropDrag(event) {
+            if (!dragState.isDragging) return;
+
+            if(tempLink) tempLink.remove();
+            
+            // Clear hover effect
+            d3.selectAll('.node-group .node-rect').classed('border-4 border-red-500', false); 
+
+            // Get final cursor position
+            const [tx, ty] = d3.pointer(event, g.node());
+
+            // Find the target node under the cursor
+            const targetNode = nodes.find(n => {
+                return Math.abs(tx - n.x) < MIN_BOX_WIDTH/2 && Math.abs(ty - n.y) < BOX_HEIGHT/2;
+            });
+
+            if (targetNode && targetNode.id !== dragState.sourceNodeId) {
+                const newEdge = {
+                    id: generateId(),
+                    source: dragState.sourceNodeId, 
+                    target: targetNode.id,
+                    label: '',
+                    sourceProp: dragState.sourcePropName,
+                    targetProp: null, // Default to null, user can edit later
+                    qX: null, qY: null
+                };
+
+                try {
+                    await dbOp('edges', 'readwrite', 'put', newEdge);
+                    showToast(`Dependency created: ${dragState.sourcePropName} -> ${targetNode.title}.`, 'success');
+                    refreshData();
+                } catch (error) {
+                    showToast("Failed to save drag-created dependency.", 'error');
+                }
+
+            } else if (targetNode && targetNode.id === dragState.sourceNodeId) {
+                showToast("Cannot connect a component to itself.", 'error');
+            } else {
+                 showToast("Drag released outside of a valid target component.", 'error');
+            }
+
+            dragState.isDragging = false;
+            dragState.sourceNodeId = null;
+            dragState.sourcePropName = null;
+            
+            d3.select(`#node-${dragState.sourceNodeId}`).selectAll(".prop-drag-dot").attr("opacity", 0);
+            simulation.alphaTarget(0);
+        }
+
+        // --- Curve Control Point Dragging ---
+        
+        // Data for the control point circle
+        let curveDrag = d3.drag()
+            .on("start", (event, d) => {
+                d3.select(`#link-handle-${d.id}`).classed("curve-handle", false).attr("opacity", 1);
+            })
+            .on("drag", async (event, d) => {
+                // Update the control point coordinates on the data object
+                d.qX = event.x;
+                d.qY = event.y;
+                // Since this is a direct data update, we just need to tick to redraw
+                simulation.alpha(0.01).restart(); 
+            })
+            .on("end", async (event, d) => {
+                // Persist the new control point coordinates
+                d3.select(`#link-handle-${d.id}`).classed("curve-handle", true).attr("opacity", 0);
+                simulation.alphaTarget(0);
+                
+                // Get raw IDs safely for persistence
+                const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+                const targetId = typeof d.target === 'object' ? d.target.id : d.target;
+
+                const rawEdge = edges.find(e => e.id === d.id);
+                
+                if (rawEdge) {
+                     await dbOp('edges', 'readwrite', 'put', {
+                        ...rawEdge, 
+                        qX: d.qX, 
+                        qY: d.qY,
+                        source: sourceId, // Use the extracted ID
+                        target: targetId  // Use the extracted ID
+                    });
+                    showToast("Curve adjusted and saved.", 'success');
+                }
+            });
+        
+        /** Updates the D3 visualization with new node/edge data. */
+        function updateGraph(nodesData, edgesData) {
+            
+            // 1. Links (Edges) - Now uses Path elements for curves
+            let link = g.selectAll(".link-path").data(edgesData, d => d.id);
+            link.exit().remove(); 
+            link = link.enter().append("path") 
+                .attr("class", "link-line link-path shadow-sm")
+                .attr("id", d => `link-${d.id}`)
+                .attr("fill", "none") 
+                .attr("pointer-events", "stroke") // Allows clicking the stroke
+                .on("click", (e, d) => { e.stopPropagation(); showConnectionDetails(d); })
+                .attr("marker-start", "url(#startDot)") 
+                .attr("marker-end", "url(#arrowhead)") 
+                .merge(link); 
+            
+            // 2. Link Labels
+            let linkLabel = g.selectAll(".link-text").data(edgesData, d => d.id);
+            linkLabel.exit().remove();
+            linkLabel = linkLabel.enter().append("text")
+                .attr("class", "link-text")
+                .attr("text-anchor", "middle")
+                .attr("dy", "-0.2em")
+                .merge(linkLabel)
+                .text(d => {
+                    // d.sourceProp and d.targetProp in the edge data structure are the names of the properties (strings or null)
+                    const src = d.sourceProp || '*'; // Use * for "any property"
+                    const tgt = d.targetProp || '*'; // Use * for "any property"
+                    const label = d.label;
+
+                    // Display format: [Label] (prop1 => prop2)
+                    const propText = `(${src} => ${tgt})`;
+                    
+                    if (!label && src === '*' && tgt === '*') {
+                         return ''; // Hide text if no label and no specific properties
+                    }
+                    
+                    return label ? `${label} ${propText}` : propText;
+                });
+
+            // 3. Curve Control Handles (Invisible circles for dragging the curve)
+            let handles = g.selectAll(".curve-handle").data(edgesData, d => d.id);
+            handles.exit().remove();
+            handles = handles.enter().append("circle")
+                .attr("id", d => `link-handle-${d.id}`)
+                .attr("class", "curve-handle")
+                .attr("r", 8)
+                .attr("fill", "#6366F1")
+                .attr("stroke", "white")
+                .attr("stroke-width", 2)
+                .attr("cursor", "move")
+                .call(curveDrag)
+                .merge(handles);
+
+            // 4. Nodes (Components)
+            let node = g.selectAll(".node-group").data(nodesData, d => d.id);
+            node.exit().remove(); 
+            
+            // Enter selection for new nodes
+            const nEnter = node.enter().append("g").attr("class", "node-group")
+                .attr("id", d => `node-${d.id}`)
+                .on("click", (e, d) => { e.stopPropagation(); showNodeDetails(d); })
+                .on("mouseenter", function() { // Show dots on hover
+                    d3.select(this).selectAll(".prop-drag-dot").attr("opacity", 1);
+                }).on("mouseleave", function() { // Hide dots on mouse leave
+                    if (!dragState.isDragging) {
+                        d3.select(this).selectAll(".prop-drag-dot").attr("opacity", 0);
+                    }
+                })
+                .call(d3.drag().on("start", (e, d) => {
+                    if (!e.active) simulation.alphaTarget(0.3).restart();
+                    d.fx = d.x; d.fy = d.y;
+                }).on("drag", (e, d) => {
+                    d.fx = e.x; d.fy = e.y;
+                }).on("end", async (e, d) => {
+                    if (!e.active) simulation.alphaTarget(0);
+                    // Ensure position update is saved
+                    await dbOp('nodes', 'readwrite', 'put', {...d, x: d.fx, y: d.fy});
+                }));
+
+            // Append shapes and text to the new node groups
+            nEnter.append("rect")
+                .attr("class", "node-rect")
+                .attr("width", MIN_BOX_WIDTH)
+                .attr("height", BOX_HEIGHT)
+                .attr("x", -MIN_BOX_WIDTH/2)
+                .attr("y", -BOX_HEIGHT/2);
+            
+            // Main component title
+            nEnter.append("text")
+                .attr("class", "node-title text-lg font-bold")
+                .attr("text-anchor", "middle")
+                .attr("dy", `${-BOX_HEIGHT/2 + 25}px`) 
+                .attr("fill", "white");
+            
+            // Component description (faded secondary text)
+            nEnter.append("text")
+                .attr("class", "node-description text-xs opacity-80")
+                .attr("text-anchor", "middle")
+                .attr("dy", `${-BOX_HEIGHT/2 + 45}px`) 
+                .attr("fill", "white");
+
+            // Property group container
+            nEnter.append("g").attr("class", "props-list");
+
+
+            node = nEnter.merge(node); 
+            
+            // Update properties of all nodes
+            node.select("rect").attr("fill", d => d.color);
+            node.select(".node-title").text(d => d.title);
+            node.select(".node-description").text(d => {
+                return d.description.substring(0, 30) + (d.description.length > 30 ? '...' : '');
+            });
+
+            // Update visible properties list and add drag dots
+            node.each(function(d) {
+                const propsGroup = d3.select(this).select(".props-list");
+                propsGroup.selectAll("*").remove(); // Clear previous props (text and dots)
+
+                const props = d.props || [];
+                const maxVisible = 4;
+                const propYOffsetStart = -BOX_HEIGHT/2 + 70; 
+
+                props.slice(0, maxVisible).forEach((prop, i) => { 
+                    const propY = propYOffsetStart + (i * PROP_LINE_HEIGHT);
+                    const dotYOffset = propY - 4; // Center of the dot
+
+                    // 1. Property Text (Left Aligned)
+                    propsGroup.append("text")
+                        .attr("text-anchor", "start") 
+                        .attr("x", -MIN_BOX_WIDTH/2 + 10) 
+                        .attr("y", propY)
+                        .attr("font-size", "10px")
+                        .attr("font-family", "monospace")
+                        .attr("fill", prop.color)
+                        .text(`${prop.name}: ${prop.type}`);
+
+                    // 2. Draggable Dot/Target (Right Aligned, Hover Visible)
+                    propsGroup.append("circle")
+                        .attr("class", "prop-drag-dot") // Class for selection
+                        .attr("opacity", 0) // Start invisible
+                        .attr("r", 4)
+                        .attr("cx", MIN_BOX_WIDTH/2 - 5) // Right edge, 5px inset
+                        .attr("cy", dotYOffset) // Center vertically with text
+                        .attr("fill", prop.color)
+                        .attr("stroke", "white") 
+                        .attr("stroke-width", 1)
+                        .attr("cursor", "crosshair")
+                        .attr("data-prop-name", prop.name)
+                        .call(d3.drag()
+                            .on("start", (event) => startPropDrag(event, d, prop.name))
+                            .on("drag", (event) => duringPropDrag(event))
+                            .on("end", (event) => endPropDrag(event))
+                        );
+                });
+
+                if (props.length > maxVisible) {
+                     propsGroup.append("text")
+                        .attr("text-anchor", "middle")
+                        .attr("y", propYOffsetStart + (maxVisible * PROP_LINE_HEIGHT)) 
+                        .attr("font-size", "10px")
+                        .attr("fill", "white")
+                        .text(`... +${props.length - maxVisible} more`);
+                }
+            });
+
+
+            // 5. Restart Simulation and Ticked function
+            simulation.nodes(nodesData).on("tick", () => {
+                
+                // Update link positions (connecting to borders)
+                link.attr("d", d => {
+                    const s = d.source;
+                    const t = d.target;
+                    
+                    const sW = MIN_BOX_WIDTH, sH = BOX_HEIGHT;
+                    const tW = MIN_BOX_WIDTH, tH = BOX_HEIGHT;
+                    
+                    // 1. Calculate the center-to-center vector for direction/intersection
+                    const dx_center = t.x - s.x;
+                    const dy_center = t.y - s.y;
+                    
+                    // --- Source Intersection Point (s_x, s_y) ---
+                    let s_x = s.x, s_y = s.y;
+                    
+                    if (d.sourceProp) {
+                        // PRIORITY 1: Snap to source property dot position (Right edge)
+                        const sourceNode = nodesData.find(n => n.id === s.id);
+                        if(sourceNode) { // Ensure node exists
+                            const propYOffset = getPropertyY(sourceNode, d.sourceProp);
+                            s_y = s.y + propYOffset; 
+                            s_x = s.x + sW / 2 - 5; // Right edge, 5px inset (dot center)
+                            
+                            // Push out slightly for the start dot marker
+                            const s_adj = adjustPoint(s_x, s_y, s.x, s.y, START_GAP);
+                            s_x = s_adj.x;
+                            s_y = s_adj.y;
+                        } else {
+                            // Fallback to center if node is missing (should not happen)
+                            s_x = s.x; s_y = s.y;
+                        }
+                    } else {
+                        // Fallback: Calculate border intersection
+                        if (Math.abs(dx_center * sH) > Math.abs(dy_center * sW)) { // Intersects Left/Right
+                            s_x = s.x + Math.sign(dx_center) * sW / 2;
+                            s_y = s.y + dy_center * (sW / 2) / Math.abs(dx_center);
+                        } else { // Intersects Top/Bottom
+                            s_y = s.y + Math.sign(dy_center) * sH / 2;
+                            s_x = s.x + dx_center * (sH / 2) / Math.abs(dy_center);
+                        }
+                        // Apply START_GAP adjustment (push point outwards for the dot marker)
+                        const s_adj = adjustPoint(s_x, s_y, s.x, s.y, START_GAP);
+                        s_x = s_adj.x;
+                        s_y = s_adj.y;
+                    }
+
+
+                    // --- Target Intersection Point (t_x, t_y) ---
+                    let t_x = t.x, t_y = t.y;
+
+                    if (d.targetProp) {
+                         // PRIORITY 1: Snap to target property dot position (Left edge)
+                        const targetNode = nodesData.find(n => n.id === t.id);
+                        if(targetNode) { // Ensure node exists
+                            const propYOffset = getPropertyY(targetNode, d.targetProp);
+                            t_y = t.y + propYOffset; 
+                            t_x = t.x - tW / 2 + 5; // Left edge, 5px inset (dot center)
+
+                            // Pull back slightly for the arrowhead marker
+                            const t_adj = adjustPoint(t_x, t_y, t.x, t.y, -ARROW_PULLBACK); 
+                            t_x = t_adj.x;
+                            t_y = t_adj.y;
+                        } else {
+                            // Fallback to center if node is missing (should not happen)
+                            t_x = t.x; t_y = t.y;
+                        }
+                    } else {
+                        // Fallback: Calculate border intersection (original logic, reversed vector)
+                        const dx_rev = s.x - t.x;
+                        const dy_rev = s.y - t.y;
+                        
+                        if (Math.abs(dx_rev * tH) > Math.abs(dy_rev * tW)) { // Intersects Left/Right
+                            t_x = t.x + Math.sign(dx_rev) * tW / 2;
+                            t_y = t.y + dy_rev * (tW / 2) / Math.abs(dx_rev);
+                        } else { // Intersects Top/Bottom
+                            t_y = t.y + Math.sign(dy_rev) * tH / 2;
+                            t_x = t.x + dx_rev * (tH / 2) / Math.abs(dy_rev);
+                        }
+                        // Apply ARROW_PULLBACK adjustment (pull point inwards for the arrowhead marker)
+                        const t_adj = adjustPoint(t_x, t_y, t.x, t.y, -ARROW_PULLBACK); 
+                        t_x = t_adj.x;
+                        t_y = t_adj.y;
+                    }
+
+                    
+                    // --- 3. Calculate Control Point for the Curve (Quadratic Bezier) ---
+                    let qx, qy;
+                    
+                    if (d.qX !== null && d.qY !== null) {
+                        // Use saved manual control point
+                        qx = d.qX;
+                        qy = d.qY;
+                    } else {
+                        // Calculate default control point
+                        const dx = t_x - s_x;
+                        const dy = t_y - s_y;
+                        
+                        const midX = s_x + dx / 2;
+                        const midY = s_y + dy / 2;
+                        
+                        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const nx = -dy / len; // Perpendicular vector
+                        const ny = dx / len;
+                        
+                        const offset = Math.min(60, len / 5) + 20; 
+                        
+                        qx = midX + nx * offset;
+                        qy = midY + ny * offset;
+                        
+                        // Set the initial calculated Q point on the data for the handle to find it
+                        // NOTE: We don't save to DB here, only if the user drags it.
+                        d.qX = qx;
+                        d.qY = qy;
+                    }
+
+                    // Generate Quadratic Bezier Path: M(start) Q(control) (end)
+                    return `M ${s_x} ${s_y} Q ${qx} ${qy} ${t_x} ${t_y}`;
+                });
+
+                // Update link label positions (midpoint of the path, not midpoint of nodes)
+                linkLabel.attr("x", d => d.qX || (d.source.x + d.target.x) / 2)
+                    .attr("y", d => d.qY || (d.source.y + d.target.y) / 2);
+
+                // Update control handle position (it follows the calculated/saved qX, qY)
+                handles.attr("cx", d => d.qX).attr("cy", d => d.qY);
+
+
+                // Update node positions
+                node.attr("transform", d => `translate(${d.x},${d.y})`);
+            });
+            simulation.force("link").links(edgesData);
+            simulation.alpha(1).restart();
+        }
+
+        // --- Initialization ---
+        window.onload = async () => {
+            await initDB();
+            // Initialize with a few property input fields
+            for(let i=0; i<3; i++) addPropInput();
+            
+            // Set initial center for the force layout
+            simulation.force("center", d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2));
+
+            // Initial data load
+            refreshData();
+        };
+
+        // Handle window resize to keep the center force correct (and allow graph to be centered)
+        window.addEventListener('resize', () => {
+             simulation.force("center", d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2));
+             simulation.alpha(0.3).restart(); // Briefly restart simulation to re-center
+        });
+    </script>
+</body>
+</html>
