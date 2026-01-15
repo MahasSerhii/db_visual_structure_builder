@@ -33,6 +33,7 @@ export function buildResetConfirmationModal() {
         titleI18n: 'confirmReset',
         titleColor: 'text-red-600',
         onClose: 'closeModal',
+        onCloseArg: 'reset',
         content: content,
         footer: [btnCancel, btnConfirm],
         maxWidth: 'max-w-lg'
@@ -69,6 +70,7 @@ export function buildClearAppDataModal() {
         titleI18n: 'resetAppTitle',
         titleColor: 'text-red-600',
         onClose: 'closeModal',
+        onCloseArg: 'clearData',
         content: content,
         footer: [btnCancel, btnConfirm],
         maxWidth: 'max-w-lg'
@@ -105,6 +107,7 @@ export function buildDeleteCommentModal() {
         titleI18n: 'deleteCommentTitle',
         titleColor: 'text-red-600',
         onClose: 'closeModal',
+        onCloseArg: 'deleteComment',
         content: content,
         footer: [btnCancel, btnConfirm],
         maxWidth: 'max-w-lg'
@@ -140,6 +143,7 @@ export function buildDeleteItemModal() {
         titleI18n: 'deleteCompConfirmTitle',
         titleColor: 'text-gray-800',
         onClose: 'closeModal',
+        onCloseArg: 'deleteItem',
         content: content,
         footer: [btnCancel, btnConfirm],
         maxWidth: 'max-w-lg'
@@ -176,6 +180,7 @@ export function buildDropRoomModal() {
         titleI18n: 'dropRoomTitle',
         titleColor: 'text-red-600',
         onClose: 'closeModal',
+        onCloseArg: 'dropRoom',
         content: content,
         footer: [btnCancel, btnConfirm],
         maxWidth: 'max-w-lg'

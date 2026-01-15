@@ -20,6 +20,7 @@ export function Modal({
     titleI18n,
     titleColor = 'text-indigo-600',
     onClose,
+    onCloseArg,
     content,
     footer,
     maxWidth = 'max-w-lg'
@@ -32,7 +33,8 @@ export function Modal({
     };
 
     if (typeof onClose === 'string') {
-        closeBtnProps.onclick = `${onClose}('${id}')`;
+        const arg = onCloseArg || id;
+        closeBtnProps.onclick = `${onClose}('${arg}')`;
     } else if (typeof onClose === 'function') {
         closeBtnProps.onclick = onClose;
     }
