@@ -327,9 +327,12 @@
                      </div>
                  </div>
 
-                 <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400" data-i18n="dataExport">Data Management</h3>
+                 <button onclick="toggleDataManagement()" class="w-full flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600 transition mb-2 group">
+                     <span data-i18n="dataExport">Data Management</span>
+                     <svg id="data-mgmt-chevron" class="w-3 h-3 transform transition-transform -rotate-90 group-hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                 </button>
                  
-                 <div class="grid grid-cols-1 gap-3">
+                 <div id="data-mgmt-section" class="grid grid-cols-1 gap-3 hidden">
                      <button onclick="openCSVModal()" class="w-full text-left p-4 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition flex items-center gap-3 border border-indigo-200 bg-white shadow-sm">
                          <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                          <div>
@@ -484,6 +487,12 @@
              </div>
              <!-- Header Controls (Theme, Lang, Global Lock) -->
              <div id="header-controls" class="flex items-stretch gap-2 shrink-0 h-8">
+                <!-- Connection Status Badge -->
+                <div id="connection-status-badge" class="hidden md:flex items-center gap-1.5 px-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-[10px] text-gray-500 dark:text-gray-400 font-medium transition select-none">
+                    <span id="conn-status-dot" class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                    <span id="conn-status-text" data-i18n="localMode">Local</span>
+                </div>
+
                  <!-- Current User Badge (New) -->
                 <div id="user-badge" class="group relative cursor-pointer px-2 flex items-center justify-center transition" onclick="switchTab('settings')" title="Your Profile (Click to Edit)">
                     <div id="user-badge-circle" class="w-6 h-6 rounded-full bg-gray-300 text-[10px] flex items-center justify-center text-white font-bold shadow-sm">
@@ -1294,6 +1303,13 @@
                 delete: "Delete",
                 saveChanges: "Save Changes",
                 cancel: "Cancel",
+                resetAppTitle: "Reset Application",
+                clearDataDesc: "This will delete all local data, including settings, cached graphs, and user preferences.",
+                clearDataWarning: "This action cannot be undone.",
+                yesClearData: "Yes, Clear Everything",
+                localMode: "Local Mode",
+                liveMode: "Live Sync",
+                host: "Host",
                 quickAddComp: "Quick Add Component",
                 editDep: "Edit Dependency",
                 to: "to",
@@ -1466,6 +1482,13 @@
                 connectCreateBtn: "Neuen Raum erstellen",
                 connectJoinBtn: "Raum beitreten",
                 connectHost: "Firebase Datenbank URL",
+                resetAppTitle: "Anwendung zurücksetzen",
+                clearDataDesc: "Dadurch werden alle lokalen Daten gelöscht, einschließlich Einstellungen, zwischengespeicherten Graphen und Benutzereinstellungen.",
+                clearDataWarning: "Diese Aktion kann nicht rückgängig gemacht werden.",
+                yesClearData: "Ja, alles löschen",
+                localMode: "Lokaler Modus",
+                liveMode: "Live-Sync",
+                host: "Host",
                 connectHostPlaceholder: "https://your-project.firebaseio.com",
                 connectApiKey: "API Schlüssel",
                 connectApiKeyPlaceholder: "API Schlüssel einfügen",
@@ -2398,6 +2421,7 @@
              document.getElementById('fb-room-section').classList.add('hidden');
              document.getElementById('fb-config-section').classList.remove('hidden');
              document.getElementById('fb-status').className = "w-2 h-2 rounded-full bg-gray-300";
+             updateConnectionBadge(false);
              document.getElementById('active-users-list').innerHTML = '';
              
              // Clear Sensitive Inputs
@@ -2630,6 +2654,7 @@
                 userRef.onDisconnect().remove();
 
                 document.getElementById('fb-status').className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_5px_#10B981]";
+                updateConnectionBadge(true);
                 showToast(`Connected to Room: ${roomId}`, 'success');
                 
                 checkAndSyncInitialState(roomId);
@@ -2969,7 +2994,7 @@
                     const isHost = (creatorId && uid === creatorId);
                     
                     const d = document.createElement('div');
-                    d.className = "px-2 py-0.5 rounded text-[10px] text-white font-bold flex items-center gap-1 shadow-sm border border-black/10 relative";
+                    d.className = "px-2 py-0.5 rounded text-[10px] text-white font-bold flex items-center gap-1 shadow-sm border border-black/10 relative transition-transform hover:scale-105 cursor-default";
                     d.style.backgroundColor = u.color;
                     
                     // Base Name
@@ -2978,8 +3003,10 @@
                     // Host Icon
                     if(isHost) {
                         // Material Crown
-                        content = `<svg class="w-3 h-3 text-yellow-300 inline-block mr-1 drop-shadow-sm" fill="currentColor" viewBox="0 0 24 24"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11h-14zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg> ${u.name}`;
+                        const crownSvg = `<svg class="w-3.5 h-3.5 text-yellow-500 inline-block mr-1 drop-shadow-sm" fill="currentColor" viewBox="0 0 24 24"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11h-14zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>`;
+                        content = `${crownSvg}<span class="drop-shadow-sm">${u.name}</span>`;
                         d.title = "Host / Room Creator";
+                        d.classList.add("ring-1", "ring-yellow-300", "shadow-md");
                     }
                     
                     d.innerHTML = content;
@@ -5943,6 +5970,47 @@
             }
             // Re-center graph slightly
             setTimeout(() => { simulation.alpha(0.1).restart(); }, 300);
+        }
+
+        function toggleDataManagement() {
+            const section = document.getElementById('data-mgmt-section');
+            const chevron = document.getElementById('data-mgmt-chevron');
+            if(!section || !chevron) return;
+
+            if (section.classList.contains('hidden')) {
+                section.classList.remove('hidden');
+                // Rotate Chevron Down (0deg)
+                chevron.classList.remove('-rotate-90'); 
+            } else {
+                section.classList.add('hidden');
+                chevron.classList.add('-rotate-90');
+            }
+        }
+
+        function updateConnectionBadge(isLive) {
+            const badge = document.getElementById('connection-status-badge');
+            const dot = document.getElementById('conn-status-dot');
+            const text = document.getElementById('conn-status-text');
+
+            if(!badge || !dot || !text) return;
+            
+            // Ensure visible
+            if(badge.classList.contains('hidden')) badge.classList.remove('hidden');
+            if(!badge.classList.contains('flex')) badge.classList.add('flex'); // mobile handling?
+
+            if(isLive) {
+                // Live Style
+                dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_#10B981] animate-pulse";
+                text.innerText = translations[currentLang]?.liveMode || "Live Sync";
+                
+                badge.className = "hidden md:flex items-center gap-1.5 px-2 rounded-lg border text-[10px] font-medium transition select-none bg-emerald-50 border-emerald-200 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-400";
+            } else {
+                // Local Style
+                dot.className = "w-1.5 h-1.5 rounded-full bg-gray-400";
+                text.innerText = translations[currentLang]?.localMode || "Local Mode";
+                
+                badge.className = "hidden md:flex items-center gap-1.5 px-2 rounded-lg border text-[10px] font-medium transition select-none bg-gray-50 border-gray-200 text-gray-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400";
+            }
         }
 
         function downloadImage() {
