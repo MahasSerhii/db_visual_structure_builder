@@ -1,0 +1,12 @@
+{
+  "name": "graph-editor-app",
+  "version": "1.0.0",
+  "description": "Offline-first Visual Graph Editor with Firebase Realtime Collaboration",
+  "scripts": {
+    "deploy": "firebase deploy",
+    "save": "git add . && git commit -m \"Update\" && git push",
+    "ship": "git add . && git commit -m \"Update\" && git push && firebase deploy"
+  },
+  "author": "",
+  "license": "ISC"
+}
