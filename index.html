@@ -1648,6 +1648,15 @@
                 jsonDetectTitle: "Werte wie 10 werden als 'number' erkannt",
                 jsonRawTitle: "Werte wie 'NVARCHAR' werden Typ 'NVARCHAR'",
                 csvStructIntro: "Das kombinierte CSV verwendet eine <strong>Superset von Spalten</strong>. Die erste Spalte <code>rowType</code> bestimmt, wie die Zeile gelesen wird.",
+                componentList: "Komponenten",
+                contactEmailPlaceholder: "ihre@email.com",
+                contactMsgPlaceholder: "Wie können wir helfen?",
+                backupRestore: "Sichern / Wiederherstellen",
+                deleteCommentTitle: "Konversation löschen",
+                deleteCommentDesc: "Sind Sie sicher, dass Sie diesen gesamten Konversationsstrang löschen möchten?",
+                yesDelete: "Ja, löschen",
+                dbConnectFail: "Datenbankverbindung fehlgeschlagen.",
+                helpCollabTitle: "Echtzeit-Zusammenarbeit",
                 csvStructCompTitle: "Wenn rowType = \"component\"",
                 csvStructCompFields: "Füllen: id, title, description, color, x, y, docLink, props",
                 csvStructCompNote: "Verbindungsspalten leer lassen.",
@@ -7616,6 +7625,15 @@
             for(let i=0; i<1; i++) addPropInput(); // Default 1 property
             simulation.force("center", d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2));
             refreshData();
+
+            // restore Config if remembered
+            const cachedConfig = localStorage.getItem('fb_config_str');
+            if(cachedConfig) {
+                const confArea = document.getElementById('fb-config-json');
+                const remCheck = document.getElementById('fb-remember');
+                if(confArea) confArea.value = cachedConfig;
+                if(remCheck) remCheck.checked = true;
+            }
 
             // Auto-Init Firebase if config field has value (cached/autofilled)
             if(document.getElementById('fb-config-json') && document.getElementById('fb-config-json').value) {
