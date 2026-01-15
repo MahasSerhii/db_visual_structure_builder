@@ -502,8 +502,10 @@
              <!-- Header Controls (Theme, Lang, Global Lock) -->
              <div id="header-controls" class="flex items-stretch gap-2 shrink-0 h-8">
                 <!-- Connection Status Badge -->
-                <div id="connection-status-badge" onclick="switchTab('connect')" class="hidden md:flex items-center gap-1.5 px-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-[10px] text-gray-500 dark:text-gray-400 font-medium transition select-none cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700">
+                <div id="connection-status-badge" onclick="switchTab('connect')" class="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-gray-200 shadow-sm text-[11px] font-semibold text-gray-600 transition-all cursor-pointer hover:bg-gray-50 hover:border-gray-300 hover:shadow-md group">
+                    <span id="conn-status-dot" class="w-2 h-2 rounded-full bg-gray-400 group-hover:scale-110 transition-transform"></span>
                     <span id="conn-status-text" data-i18n="localMode">Local</span>
+                    <svg class="w-3 h-3 text-gray-400 group-hover:text-gray-600 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </div>
 
                  <!-- Current User Badge (New) -->
@@ -6072,22 +6074,23 @@
 
             if(!badge || !dot || !text) return;
             
-            // Ensure visible
-            if(badge.classList.contains('hidden')) badge.classList.remove('hidden');
-            if(!badge.classList.contains('flex')) badge.classList.add('flex'); // mobile handling?
-
+            // Ensure visible & standard style
+            badge.classList.remove('hidden');
+            badge.classList.add('flex'); // Ensure flex is on
+            
             if(isLive) {
-                // Live Style: Green without border, White Text
-                dot.className = "w-1.5 h-1.5 rounded-full bg-white shadow-sm animate-pulse";
+                // LIGHT Live Style: Green-Tint Background, Dark Green Text
+                dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse";
                 text.innerText = translations[currentLang]?.liveMode || "Live Sync";
                 
-                badge.className = "hidden md:flex items-center gap-1.5 px-2 rounded-lg text-[10px] font-medium transition select-none cursor-pointer bg-emerald-500 text-white hover:bg-emerald-600";
+                badge.className = "hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 shadow-sm text-[11px] font-semibold text-emerald-700 transition-all cursor-pointer hover:bg-emerald-100 hover:border-emerald-300 hover:shadow-md group";
             } else {
-                // Local Style: Violet, White Text, Green Dot (as requested)
-                dot.className = "w-1.5 h-1.5 rounded-full bg-green-400 shadow-sm";
+                // LIGHT Local Style: White/Gray Background, Gray Text
+                dot.className = "w-2 h-2 rounded-full bg-gray-400 group-hover:bg-gray-500 transition-colors";
                 text.innerText = translations[currentLang]?.localMode || "Local Mode";
                 
-                badge.className = "hidden md:flex items-center gap-1.5 px-2 rounded-lg text-[10px] font-medium transition select-none cursor-pointer bg-violet-600 text-white hover:bg-violet-700";
+                // Reset to default HTML structure style
+                badge.className = "hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-gray-200 shadow-sm text-[11px] font-semibold text-gray-600 transition-all cursor-pointer hover:bg-gray-50 hover:border-gray-300 hover:shadow-md group";
             }
         }
 
