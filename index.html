@@ -7612,6 +7612,7 @@
             
             initTheme(); // Load Theme
             initColorPrefs(); // Load Default Colors
+            updateConnectionBadge(false); // Set Initial Badge State (Local)
             for(let i=0; i<1; i++) addPropInput(); // Default 1 property
             simulation.force("center", d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2));
             refreshData();
