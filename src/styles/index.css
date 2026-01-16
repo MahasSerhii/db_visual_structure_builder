@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles from original index.html */
+.node-group { cursor: grab; }
+.node-group:active { cursor: grabbing; }
+
+.node-rect { 
+    stroke: #E5E7EB; 
+    stroke-width: 1.5px; 
+    rx: 8; 
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.05)); 
+    transition: all 0.2s ease;
+}
+.node-rect:hover {
+    stroke: #6366F1;
+    filter: drop-shadow(0 10px 15px rgba(99, 102, 241, 0.15));
+}
+
+.link-line { fill: none; transition: all 0.3s; } 
+.link-line:hover { opacity: 0.7; cursor: pointer; }
+.link-text { fill: #6B7280; font-size: 10px; font-family: 'Inter', sans-serif; pointer-events: none; opacity: 0.8; transition: opacity 0.2s;}
+.link-group:hover .link-text { opacity: 1; font-weight: 600; }
+
+.prop-color-input { -webkit-appearance: none; appearance: none; border: none; width: 12px; height: 12px; padding: 0; background: none; cursor: pointer; }
+
+.curve-handle { opacity: 0; transition: opacity 0.2s; }
+.link-path:hover + .curve-handle { opacity: 1; }
+
+.doc-link-icon { font-size: 12px; fill: rgba(255,255,255,0.7); cursor: pointer; transition: fill 0.2s;}
+.doc-link-icon:hover { fill: #FFD700; }
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #D1D5DB; }
+
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details[open] summary ~ * { animation: sweep .3s ease-in-out; }
+@keyframes sweep { 0% {opacity: 0; margin-top: -10px} 100% {opacity: 1; margin-top: 0px} }
+
+@keyframes pulse-once {
+    0% { transform: scale(0.95); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+.animate-pulse-once {
+    animation: pulse-once 0.3s ease-out forwards;
+}
+.animation-fade-in-up {
+    animation: fadeInUp 0.3s ease-out forwards;
+}
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Dark Mode Overrides */
+body.dark { background-color: #111827; color: #F9FAFB; }
+body.dark #sidebar, body.dark .bg-white { background-color: #1F2937 !important; color: #F9FAFB !important; border-color: #374151 !important; }
+body.dark .bg-gray-50, body.dark .bg-gray-100 { background-color: #111827 !important; color: #E5E7EB !important; border-color: #374151 !important; }
+body.dark input, body.dark select, body.dark textarea { background-color: #374151 !important; color: white !important; border-color: #4B5563 !important; }
+body.dark .text-gray-500, body.dark .text-gray-600, body.dark .text-gray-700 { color: #9CA3AF !important; }
+body.dark .text-gray-800, body.dark .text-gray-900 { color: #F3F4F6 !important; }
+body.dark .border-gray-200, body.dark .border-gray-300 { border-color: #4B5563 !important; }
+
+body.dark .fixed .bg-white { background-color: #1F2937 !important; border-color: #374151 !important; }
+body.dark .fixed .bg-gray-50 { background-color: #111827 !important; }
+
+#diagram-container {
+    background-color: #ffffff;
+    background-image: 
+        linear-gradient(#e5e7eb 1px, transparent 1px),
+        linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+body.dark #diagram-container {
+    background-color: #111827;
+    background-image: 
+        linear-gradient(#374151 1px, transparent 1px),
+        linear-gradient(90deg, #374151 1px, transparent 1px);
+    border-color: #374151 !important;
+}
+
+body.dark .bg-gray-50\/50 {
+    background-color: transparent !important;
+}
+
+.blink-lock .lock-icon-path {
+    animation: vanish-animation 0.5s ease-in-out 1;
+}
+@keyframes vanish-animation {
+    0% { opacity: 1; }
+    20% { opacity: 0; }
+    80% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+@keyframes shake-animation {
+    0% { transform: translate(76px, -8px) scale(0.7) rotate(0deg); }
+    20% { transform: translate(76px, -8px) scale(0.7) rotate(-20deg); }
+    40% { transform: translate(76px, -8px) scale(0.7) rotate(15deg); }
+    60% { transform: translate(76px, -8px) scale(0.7) rotate(-10deg); }
+    80% { transform: translate(76px, -8px) scale(0.7) rotate(5deg); }
+    100% { transform: translate(76px, -8px) scale(0.7) rotate(0deg); }
+}
+.locked-cursor {
+    cursor: pointer;
+}

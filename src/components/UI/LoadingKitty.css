@@ -1,0 +1,39 @@
+.loading-kitty-container {
+    display: inline-block;
+}
+
+.kitty-svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.thread-ball {
+    transform-origin: 82px 78px;
+    animation: ball-roll 2s ease-in-out infinite alternate;
+}
+
+.kitty-paw-group {
+    transform-origin: 62px 68px;
+    animation: paw-swipe 0.5s ease-in-out infinite alternate;
+}
+
+.kitty-head {
+    transform-origin: 50px 50px;
+    animation: head-bob 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes ball-roll {
+    0% { transform: rotate(-10deg) translateX(0); }
+    100% { transform: rotate(120deg) translateX(3px); }
+}
+
+@keyframes paw-swipe {
+    0% { transform: rotate(0deg) scaleX(1); }
+    100% { transform: rotate(-15deg) scaleX(1.1); }
+}
+
+@keyframes head-bob {
+    0% { transform: rotate(-2deg); }
+    100% { transform: rotate(2deg); }
+}
