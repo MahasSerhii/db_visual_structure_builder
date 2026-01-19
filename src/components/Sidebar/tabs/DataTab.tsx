@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGraph } from '../../../context/GraphContext';
 import { useToast } from '../../../context/ToastContext';
-import { Download, Upload, Database, FileSpreadsheet, PlayCircle, Unplug, Link as LinkIcon, Trash, History, Crown, User, ToggleLeft, ToggleRight, Radio, ChevronDown, ChevronUp } from 'lucide-react';
-import { initFirebase, connectToRoom, disconnectRoom, subscribeToUsers } from '../../../utils/firebase';
+import { Download, Upload, Database, FileSpreadsheet, PlayCircle, Unplug, Link as LinkIcon, Trash, History, Crown, User, ToggleLeft, ToggleRight, Radio, ChevronDown, ChevronUp, DownloadCloud, UploadCloud } from 'lucide-react';
+import { initFirebase, connectToRoom, disconnectRoom, subscribeToUsers, uploadFullGraph, fetchRoomData } from '../../../utils/firebase';
 import { CSVModal } from '../../Modals/CSVModal';
 import { HistoryModal } from '../../Modals/HistoryModal';
 import { ConfirmationModal } from '../../Modals/ConfirmationModal';
@@ -201,6 +201,13 @@ export const DataTab: React.FC = () => {
                      
                      // Update Context
                      setGraphData(nList, eList, cList);
+                 } else {
+                     // Empty Room - If Host, assume we initial seeding
+                     if (!isClientMode && (nodes.length > 0 || edges.length > 0)) {
+                         console.log("Seeding empty room with local data...");
+                         uploadFullGraph(nodes, edges, comments);
+                         showToast("Room initialized with local data", 'info');
+                     }
                  }
             });
             
@@ -270,6 +277,45 @@ export const DataTab: React.FC = () => {
              refreshData();
              handleDisconnect();
              showToast("Database & Local Data Wiped", "error");
+    };
+
+    const handlePushToDB = () => {
+        if (!isLiveMode || !currentRoomId) return;
+        if (confirm("Overwrite REMOTE database with LOCAL data? This will update the graph for all users.")) {
+            uploadFullGraph(nodes, edges, comments);
+            showToast("Local data pushed to Remote DB", "success");
+        }
+    };
+
+    const handlePullFromDB = async () => {
+        if (!isLiveMode || !currentRoomId) return;
+        if (confirm("Overwrite LOCAL data with REMOTE database? Unsaved local changes will be lost.")) {
+            try {
+                const data = await fetchRoomData(currentRoomId);
+                if (data) {
+                     const nList = data.nodes ? (Array.isArray(data.nodes) ? data.nodes : Object.values(data.nodes)) : [];
+                     const eList = data.edges ? (Array.isArray(data.edges) ? data.edges : Object.values(data.edges)) : [];
+                     const cList = data.comments ? (Array.isArray(data.comments) ? data.comments : Object.values(data.comments)) : [];
+                     
+                     // Helper to update IDB
+                     await dbOp('nodes', 'readwrite', 'clear');
+                     await dbOp('edges', 'readwrite', 'clear');
+                     await dbOp('comments', 'readwrite', 'clear');
+                     
+                     for(const n of nList) await dbOp('nodes', 'readwrite', 'put', n);
+                     for(const e of eList) await dbOp('edges', 'readwrite', 'put', e);
+                     for(const c of cList) await dbOp('comments', 'readwrite', 'put', c);
+                     
+                     setGraphData(nList, eList, cList);
+                     showToast("Local data restored from Remote DB", "success");
+                } else {
+                    showToast("Remote DB is empty", "info");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Failed to fetch remote data", "error");
+            }
+        }
     };
     
     const handleCopyMagicLink = () => {
@@ -447,6 +493,26 @@ export const DataTab: React.FC = () => {
                                 </button>
                             )}
                         </div>
+
+                         {/* Host Sync Controls */}
+                         {isConnected && !isClientMode && isLiveMode && (
+                            <div className="flex gap-2 pt-2 border-t border-indigo-50 dark:border-indigo-900/50">
+                                <button 
+                                    onClick={handlePullFromDB}
+                                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300"
+                                    title="Restore Local from DB"
+                                >
+                                    <DownloadCloud size={12} /> Restore from DB
+                                </button>
+                                <button 
+                                    onClick={handlePushToDB}
+                                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] bg-orange-50 text-orange-700 border border-orange-200 rounded hover:bg-orange-100 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-300"
+                                    title="Update DB from Local"
+                                >
+                                    <UploadCloud size={12} /> Push to DB
+                                </button>
+                            </div>
+                         )}
 
                          {/* Connected Users List (Accordion) */}
                         {isConnected && connectedUsers.length > 0 && (

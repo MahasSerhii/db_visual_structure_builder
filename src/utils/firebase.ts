@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, update, push, remove, Database, onDisconnect, serverTimestamp } from 'firebase/database';
+import { getDatabase, ref, onValue, set, update, push, remove, get, Database, onDisconnect, serverTimestamp } from 'firebase/database';
 import { NodeData, EdgeData, User } from './types';
 
 let app: FirebaseApp | undefined;
@@ -111,4 +111,29 @@ export const disconnectRoom = () => {
         remove(userRef);
     }
     currentRoomId = null;
+};
+
+export const uploadFullGraph = (nodes: NodeData[], edges: EdgeData[], comments: any[]) => {
+    if (!db || !currentRoomId) return;
+    
+    // Transform arrays to objects for Firebase key-value structure if needed, 
+    // or just store as arrays/objects assuming Firebase handles it.
+    // Our syncNodeChange updates individual paths. 
+    // It's safer to reconstruct the object map to ensure ID keys match.
+    
+    const data: any = { nodes: {}, edges: {}, comments: {} };
+    
+    nodes.forEach(n => data.nodes[n.id] = n);
+    edges.forEach(e => data.edges[e.id] = e);
+    comments.forEach(c => data.comments[c.id] = c);
+    
+    const dataRef = ref(db, `graphs/${currentRoomId}/data`);
+    set(dataRef, data);
+};
+
+export const fetchRoomData = async (roomId: string): Promise<any> => {
+    if (!db) return null;
+    const dataRef = ref(db, `graphs/${roomId}/data`);
+    const snapshot = await get(dataRef);
+    return snapshot.exists() ? snapshot.val() : null;
 };
