@@ -9,6 +9,7 @@ import { HistoryModal } from '../../Modals/HistoryModal';
 import { AuthModal, AuthMode } from '../../Modals/AuthModal';
 import { ConfirmationModal } from '../../Modals/ConfirmationModal';
 import { SyncConflictModal } from '../../Modals/SyncConflictModal';
+import { ClearGraphModal } from '../../Modals/ClearGraphModal';
 
 
 import { dbOp } from '../../../utils/indexedDB';
@@ -47,6 +48,7 @@ export const DataTab: React.FC = () => {
     
     const [isCSVModalOpen, setCSVModalOpen] = useState(false);
     const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
+    const [isClearGraphModalOpen, setClearGraphModalOpen] = useState(false);
     
     // connectedUsers removed - using Context
     const [isUsersListOpen, setIsUsersListOpen] = useState(false);
@@ -863,6 +865,54 @@ export const DataTab: React.FC = () => {
         }
     };
 
+    const handleClearGraph = async (clearLocal: boolean, clearLive: boolean) => {
+        try {
+            if (clearLocal) {
+                // Clear from IndexedDB
+                await dbOp('nodes', 'readwrite', 'clear');
+                await dbOp('edges', 'readwrite', 'clear');
+                await dbOp('comments', 'readwrite', 'clear');
+                
+                // Update context with empty data
+                setGraphData([], [], []);
+            }
+
+            if (clearLive && isLiveMode && currentRoomId) {
+                // Clear from backend (live room)
+                try {
+                    const response = await fetch(
+                        `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/graph/clear-room`,
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+                            },
+                            body: JSON.stringify({ roomId: currentRoomId })
+                        }
+                    );
+
+                    if (!response.ok) {
+                        throw new Error('Failed to clear live graph');
+                    }
+
+                    // Refresh data from backend to reflect the clearing
+                    await refreshData(true);
+                    showToast("Graph cleared successfully", "success");
+                } catch (err) {
+                    console.error("Failed to clear live graph", err);
+                    showToast("Failed to clear live graph", "error");
+                }
+            } else if (clearLocal) {
+                // If only clearing local, show confirmation
+                showToast("Local graph cleared successfully", "success");
+            }
+        } catch (err) {
+            console.error("Error clearing graph", err);
+            showToast("Failed to clear graph", "error");
+        }
+    };
+
     return (
         <div className="space-y-6">
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">{t('data.collab')}</h3>
@@ -955,6 +1005,7 @@ export const DataTab: React.FC = () => {
                 isReadOnly={isReadOnly}
                 handleImportFile={handleImportFile}
                 setHistoryModalOpen={setHistoryModalOpen}
+                setClearGraphModalOpen={setClearGraphModalOpen}
             />
             
             <AuthModal 
@@ -1009,6 +1060,14 @@ export const DataTab: React.FC = () => {
             
             <CSVModal isOpen={isCSVModalOpen} onClose={() => setCSVModalOpen(false)} />
             <HistoryModal isOpen={isHistoryModalOpen} onClose={() => setHistoryModalOpen(false)} />
+
+            <ClearGraphModal
+                isOpen={isClearGraphModalOpen}
+                onClose={() => setClearGraphModalOpen(false)}
+                onConfirm={handleClearGraph}
+                isLiveMode={isLiveMode}
+                t={t}
+            />
 
             <ConfirmationModal
                 isOpen={isDisconnectModalOpen}

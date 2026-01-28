@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileSpreadsheet, Database, Upload, History, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import { FileSpreadsheet, Database, Upload, History, ChevronDown, ChevronUp, Settings, Trash2 } from 'lucide-react';
 
 interface DataActionsSectionProps {
     t: (key: string) => string;
@@ -8,10 +8,11 @@ interface DataActionsSectionProps {
     isReadOnly: boolean;
     handleImportFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
     setHistoryModalOpen: (val: boolean) => void;
+    setClearGraphModalOpen: (val: boolean) => void;
 }
 
 export const DataActionsSection: React.FC<DataActionsSectionProps> = ({
-    t, setCSVModalOpen, exportJSON, isReadOnly, handleImportFile, setHistoryModalOpen
+    t, setCSVModalOpen, exportJSON, isReadOnly, handleImportFile, setHistoryModalOpen, setClearGraphModalOpen
 }) => {
     const [isOpen, setIsOpen] = useState(false);
 
@@ -73,6 +74,22 @@ export const DataActionsSection: React.FC<DataActionsSectionProps> = ({
                         <div>
                             <div className="font-bold">{t('data.history')}</div>
                             <div className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-500">{t('data.actions.historyDesc')}</div>
+                        </div>
+                    </button>
+
+                    <button 
+                        onClick={() => setClearGraphModalOpen(true)} 
+                        className={`w-full text-left p-4 text-xs font-medium rounded-lg transition flex items-center gap-3 border shadow-sm ${
+                            isReadOnly 
+                            ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed dark:bg-slate-800/50 dark:border-slate-800 dark:text-gray-600' 
+                            : 'bg-white border-red-200 text-red-600 hover:bg-red-50 dark:bg-slate-800 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/20'
+                        }`}
+                        disabled={isReadOnly}
+                    >
+                        <Trash2 size={24} className={isReadOnly ? "text-gray-400 dark:text-gray-600" : "text-gray-600 dark:text-gray-400"} />
+                        <div>
+                            <div className="font-bold">{t('clear.graphTitle')}</div>
+                            <div className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-500">{t('data.actions.clearDesc')}</div>
                         </div>
                     </button>
                 </div>

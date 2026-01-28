@@ -170,6 +170,18 @@ export const translations: Record<string, Translation> = {
         dropRoomTitle: "Drop / Clear All Room Data (Dangerous)",
         copyLinkTitle: "Copy Link",
         connectCreateBtn: "Connect / Create",
+        // Clear Graph Modal
+        'clear.graphTitle': "Clear Graph",
+        'clear.graphWarning': "This action cannot be undone. Your graph data will be permanently deleted.",
+        'clear.clearLocalGraph': "Clear Local Graph",
+        'clear.clearLocalDesc': "Remove the graph stored on this device.",
+        'clear.clearLiveGraph': "Clear Live Graph",
+        'clear.clearLiveDesc': "Remove the graph from the shared live session (room).",
+        'clear.clearGraph': "Clear Graph",
+        'clear.infoLocalMode': "You are in local mode. If you clear the local graph only and later switch to live mode with an identical graph, you will be asked if you want to replace the live version.",
+        'clear.infoLiveMode': "You are in live mode. Clearing the live graph will immediately remove it from the shared session for all users.",
+        'data.actions.clearDesc': "Completely rework your graph by clearing it.",
+        info: "Info",
     },
     // Other languages would go here (truncated for brevity in this step, but included in real file)
     // The user can add them or I can copy them if they ask. The initial "en" is most important for structure.
