@@ -16,22 +16,25 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
     io.on('connection', (socket: Socket) => {
         console.log('Client connected', socket.id);
 
-        socket.on('join-room', async (data: { roomId: string, userName: string, userColor: string, userEmail?: string, isVisible?: boolean }) => {
-            const { roomId, userName, userColor, userEmail, isVisible = true } = data;
+        socket.on('join-room', async (data: { roomId: string, userName: string, userColor: string, userId?: string, userEmail?: string, isVisible?: boolean }) => {
+            const { roomId, userName, userColor, userId, userEmail, isVisible = true } = data;
             socket.join(roomId);
-            console.log(`Socket ${socket.id} joined room ${roomId}`);
+            console.log(`Socket ${socket.id} joined room ${roomId} (User: ${userName}, ID: ${userId})`);
 
             // Save Session
             try {
-                // Remove existing sessions for this user in this room to prevent duplicates
-                // This assumes one active session per user per room (fixes ghost sessions)
-                if (userEmail && userEmail !== 'hidden') {
+                // Eliminate duplicates:
+                // 1. By userId (if provided and robust)
+                // 2. By userEmail (if provided)
+                if (userId) {
+                     await Session.deleteMany({ roomId, userId, socketId: { $ne: socket.id } });
+                } else if (userEmail && userEmail !== 'hidden') {
                     await Session.deleteMany({ roomId, userEmail, socketId: { $ne: socket.id } });
                 }
 
                 await Session.findOneAndUpdate(
                     { socketId: socket.id },
-                    { socketId: socket.id, roomId, userName, userColor, userEmail, isVisible, connectedAt: new Date() },
+                    { socketId: socket.id, roomId, userId, userName, userColor, userEmail, isVisible, connectedAt: new Date() },
                     { upsert: true }
                 );
 
@@ -39,6 +42,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                 const sessions = await Session.find({ roomId });
                 io.to(roomId).emit('presence:update', sessions.map(s => ({
                     socketId: s.socketId,
+                    userId: s.userId,
                     name: s.userName,
                     color: s.userColor,
                     email: s.userEmail,
@@ -54,6 +58,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                 const sessions = await Session.find({ roomId });
                 io.to(roomId).emit('presence:update', sessions.map(s => ({
                     socketId: s.socketId,
+                    userId: s.userId,
                     name: s.userName,
                     color: s.userColor,
                     email: s.userEmail,
@@ -69,6 +74,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                 const sessions = await Session.find({ roomId });
                 io.to(roomId).emit('presence:update', sessions.map(s => ({
                     socketId: s.socketId,
+                    userId: s.userId,
                     name: s.userName,
                     color: s.userColor,
                     email: s.userEmail,
@@ -89,6 +95,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                     const sessions = await Session.find({ roomId });
                     io.to(roomId).emit('presence:update', sessions.map(s => ({
                         socketId: s.socketId,
+                        userId: s.userId,
                         name: s.userName,
                         color: s.userColor,
                         email: s.userEmail,

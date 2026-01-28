@@ -37,7 +37,7 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
 router.post('/invite', authenticate, async (req: Request, res: Response) => {
     try {
         const { email, roomId, configStr, permissions, hostName, projectName, origin } = req.body;
-        console.log(`[Inviting] ${email} to room ${roomId}`);
+        console.log(`[Invite START] Email: ${email}, RoomId: ${roomId}, Permissions: ${permissions}`);
         
         const inviteToken = jwt.sign({ 
             email, roomId, configStr, permissions, projectName, hostName, 
@@ -45,36 +45,73 @@ router.post('/invite', authenticate, async (req: Request, res: Response) => {
         }, JWT_SECRET, { expiresIn: '7d' });
 
         const project = await Project.findOne({ roomId });
-        if (project) {
-            const user = await User.findOne({ email });
-            await Access.findOneAndUpdate(
-                { projectId: project._id as any, invitedEmail: email },
-                { 
-                     projectId: project._id, invitedEmail: email, 
-                     role: permissions === 'rw' ? 'writer' : 'viewer',
-                     userId: user?._id 
-                },
-                { upsert: true, new: true }
-            );
+        console.log(`[Invite] Project lookup result:`, project ? `Found (ID: ${project._id})` : 'NOT FOUND');
+        
+        if (!project) {
+            console.error(`[Invite ERROR] Project with roomId "${roomId}" not found in database!`);
+            return res.status(404).json({ error: "Project not found. Please ensure the room exists." });
         }
+        
+        // Try to find existing user by email
+        let user = await User.findOne({ email });
+        console.log(`[Invite] User lookup result:`, user ? `Found (ID: ${user._id}, Authorized: ${user.authorized})` : 'NOT FOUND');
+        
+        // If user doesn't exist, create a new pre-registered user
+        if (!user) {
+            user = await User.create({
+                email,
+                name: email.split('@')[0], // Use email prefix as default name
+                color: '#6366F1', // Default color
+                authorized: false, // Not yet authorized until they login
+                visible: true
+            });
+            console.log(`[User Created] Pre-registered user: ${email} (ID: ${user._id})`);
+        } else {
+            console.log(`[User Exists] Using existing user: ${email} (ID: ${user._id})`);
+        }
+        
+        // Create or update Access record with the user ID
+        const accessResult = await Access.findOneAndUpdate(
+            { projectId: project._id as any, userId: user._id as any },
+            { 
+                $set: {
+                    projectId: project._id,
+                    userId: user._id,
+                    invitedEmail: email, // Keep for reference
+                    role: permissions === 'rw' ? 'writer' : 'viewer',
+                    isDeleted: false
+                }
+            },
+            { upsert: true, new: true }
+        );
+        console.log(`[Access Created/Updated] AccessID: ${accessResult._id}, Role: ${accessResult.role}, ProjectID: ${accessResult.projectId}, UserID: ${accessResult.userId}`);
 
         const link = `${origin}?invite_token=${inviteToken}`;
         console.log(`[Invite Generated] Link: ${link}`);
 
-        try {
-            await sendEmail(email, `Invitation to ${projectName || 'Project'}`, 
-                `<p>Click <a href="${link}">here</a> to join.</p>`
-            );
-            console.log(`[Invite Sent] Email dispatched to ${email}`);
-        } catch (mailError) {
-            console.error("[Invite Email Failed] But responding success to UI", mailError);
-            // We still return success because the link was generated and permission granted
+        // Only send email if not requested to skip
+        if (!req.body.skipEmail) {
+            try {
+                await sendEmail(email, `Invitation to ${projectName || 'Project'}`, 
+                    `<p>Click <a href="${link}">here</a> to join.</p>`
+                );
+                console.log(`[Invite Sent] Email dispatched to ${email}`);
+            } catch (mailError) {
+                console.error("[Invite Email Failed] But responding success to UI", mailError);
+                // We still return success because the link was generated and permission granted
+            }
+        } else {
+             console.log(`[Invite] Email sending skipped by request`);
         }
 
-        res.json({ success: true, link: process.env.NODE_ENV === 'development' ? link : undefined });
+        // Always return link if it was requested specifically (e.g. for "Copy Link" feature) 
+        // OR if in dev mode
+        const returnLink = req.body.skipEmail || process.env.NODE_ENV === 'development';
+
+        res.json({ success: true, link: returnLink ? link : undefined });
     } catch (e) {
         const err = e as Error;
-        console.error("Invite Error", err);
+        console.error("Invite Error Global:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -100,11 +137,12 @@ router.get('/validate-invite', async (req: Request, res: Response) => {
 
 router.post('/register', async (req: Request, res: Response) => {
     try {
-        const { email, password, inviteToken } = req.body;
+        const { email, password, inviteToken, name, color } = req.body;
         console.log(`[Register Attempt] Email: ${email}`);
 
         let user = await User.findOne({ email });
-        if (user) {
+        if (user && user.authorized) {
+             // User exists and is already authorized
              console.log(`[Register] User exists: ${email}`);
              const resetToken = jwt.sign({ email: user.email, type: 'reset' }, JWT_SECRET, { expiresIn: '1h' });
              const link = `${CLIENT_URL}?reset_token=${resetToken}`;
@@ -122,15 +160,31 @@ router.post('/register', async (req: Request, res: Response) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        user = await User.create({
-            email,
-            password: hashedPassword,
-            name: email.split('@')[0], 
-            color: '#'+Math.floor(Math.random()*16777215).toString(16),
-            visible: true
-        });
+        if (!user) {
+            // New user
+            user = await User.create({
+                email,
+                password: hashedPassword,
+                name: name || email.split('@')[0], 
+                color: color || '#'+Math.floor(Math.random()*16777215).toString(16),
+                visible: true,
+                authorized: true // Mark as authorized on registration
+            });
+        } else {
+            // Pre-registered user (invited), now authorizing
+            user = await User.findByIdAndUpdate(
+                user._id,
+                {
+                    password: hashedPassword,
+                    name: name || user.name,
+                    color: color || user.color,
+                    authorized: true // Mark as authorized
+                },
+                { new: true }
+            );
+        }
 
-        if (inviteToken && typeof inviteToken === 'string') {
+        if (inviteToken && typeof inviteToken === 'string' && user) {
             try {
                 console.log("Processing invite token...");
                 const decoded = jwt.verify(inviteToken, JWT_SECRET) as UserPayload & { roomId: string };
@@ -138,8 +192,8 @@ router.post('/register', async (req: Request, res: Response) => {
                      const project = await Project.findOne({ roomId: decoded.roomId });
                      if (project) {
                          await Access.findOneAndUpdate(
-                             { projectId: project._id as any, invitedEmail: email },
-                             { userId: user._id }, 
+                             { projectId: project._id as any, userId: user._id as any },
+                             { $set: { userId: user._id } }, 
                              { new: true }
                          );
                      }
@@ -147,6 +201,10 @@ router.post('/register', async (req: Request, res: Response) => {
             } catch(e) {
                 console.warn("Invalid Invite Token during register", e);
             }
+        }
+
+        if (!user) {
+            return res.status(500).json({ error: "User creation failed" });
         }
 
         const token = jwt.sign({ email: user.email, id: user._id }, JWT_SECRET, { expiresIn: '30d' });
@@ -258,13 +316,20 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 
 router.post('/login', async (req: Request, res: Response) => {
     try {
-        const { email, password, rememberMe } = req.body;
+        const { email, password, rememberMe, name, color } = req.body;
         let user = await User.findOne({ email });
         
         if (!user) return res.status(404).json({ error: "User not found" });
 
         const isMatch = await bcrypt.compare(password, user.password || '');
         if (!isMatch) return res.status(401).json({ error: "Invalid Credentials" });
+        
+        // If pre-registered user logging in for first time, set authorized to true
+        if (!user.authorized) {
+            user.authorized = true;
+            if (name) user.name = name;
+            if (color) user.color = color;
+        }
         
         user.lastActive = new Date();
         user.rememberMe = !!rememberMe; // Update preference
@@ -309,11 +374,36 @@ router.post('/verify-access', async (req: Request, res: Response) => {
            return res.json({ allowed: true, role: 'host' });
        }
        
-       const access = await Access.findOne({ projectId: project._id as any, userId: user._id as any });
+       // Check access by userId first
+       let access = await Access.findOne({ 
+           projectId: project._id as any, 
+           userId: user._id as any,
+           isDeleted: false 
+       });
+       
+       // If not found by userId, check by email (for invited users)
+       if (!access) {
+           access = await Access.findOne({ 
+               projectId: project._id as any, 
+               invitedEmail: user.email,
+               isDeleted: false 
+           });
+           
+           // If found by email, update userId to link the account
+           if (access) {
+               access.userId = user._id as any;
+               await access.save();
+               console.log(`[Access Linked] User ${user.email} linked to Access record`);
+           }
+       }
+       
        if (access) return res.json({ allowed: true, role: access.role });
        
        res.json({ allowed: false });
-    } catch(e) { res.status(401).json({ allowed: false }); }
+    } catch(e) { 
+        console.error('[verify-access error]', e);
+        res.status(401).json({ allowed: false }); 
+    }
 });
 
 router.put('/profile', authenticate, async (req: Request, res: Response) => {

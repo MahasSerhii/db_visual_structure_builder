@@ -73,7 +73,14 @@ export const TeamInviteSection: React.FC<TeamInviteSectionProps> = ({
            </div>
             
             {/* Fallback Legacy Button */}
-            <div className="text-[9px] text-center text-gray-400 flex items-center justify-center gap-1 cursor-pointer hover:text-indigo-500" onClick={handleCopyMagicLink}>
+            <div 
+                className={`text-[9px] text-center flex items-center justify-center gap-1 cursor-pointer transition-colors ${
+                    inviteEmail && inviteEmail.includes('@') 
+                    ? "text-indigo-600 font-medium hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300" 
+                    : "text-gray-400 hover:text-gray-500"
+                }`} 
+                onClick={handleCopyMagicLink}
+            >
                 <LinkIcon size={10} /> or copy magic link manually
             </div>
         </div>

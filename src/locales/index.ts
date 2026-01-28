@@ -181,6 +181,10 @@ export const translations: Record<string, Translation> = {
         'clear.infoLocalMode': "You are in local mode. If you clear the local graph only and later switch to live mode with an identical graph, you will be asked if you want to replace the live version.",
         'clear.infoLiveMode': "You are in live mode. Clearing the live graph will immediately remove it from the shared session for all users.",
         'data.actions.clearDesc': "Completely rework your graph by clearing it.",
+        // User management translations
+        'user.removeTitle': "Remove User from Project",
+        'user.removeMessage': "Are you sure you want to remove this user from the project?",
+        'user.removeConfirm': "Remove User",
         info: "Info",
     },
     // Other languages would go here (truncated for brevity in this step, but included in real file)

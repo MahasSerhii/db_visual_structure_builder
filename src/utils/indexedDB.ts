@@ -59,3 +59,35 @@ export const dbOp = async <T>(
         request.onerror = () => reject(request.error);
     });
 };
+
+export const deleteWholeDB = (): Promise<void> => {
+    // 1. Close the active connection if it exists
+    if (dbInstance) {
+        dbInstance.close();
+        dbInstance = null;
+    }
+
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.deleteDatabase(DB_NAME);
+        
+        req.onsuccess = () => {
+            console.log("DB Deleted successfully");
+            resolve();
+        };
+        
+        req.onerror = () => {
+             console.error("Error deleting DB:", req.error);
+             reject(req.error);
+        };
+        
+        req.onblocked = () => {
+            console.warn("Delete DB blocked. Closing connection and trying to proceed...");
+            // If blocked, it means another tab or connection is open.
+            // We can't force close other tabs.
+            // But we shouldn't hang the logout process.
+            // Let's resolve anyway so the App can continue to clear LocalStorage
+            // The DB might persist until all tabs are closed.
+            resolve(); 
+        };
+    });
+};

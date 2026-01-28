@@ -50,6 +50,11 @@ export const DataTab: React.FC = () => {
     const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
     const [isClearGraphModalOpen, setClearGraphModalOpen] = useState(false);
     
+    // Room Access Management
+    const [roomAccessUsers, setRoomAccessUsers] = useState<any[]>([]);
+    const [isRemoveUserConfirmOpen, setIsRemoveUserConfirmOpen] = useState(false);
+    const [userToRemove, setUserToRemove] = useState<{ accessId: string; name: string } | null>(null);
+    
     // connectedUsers removed - using Context
     const [isUsersListOpen, setIsUsersListOpen] = useState(false);
     
@@ -257,9 +262,18 @@ export const DataTab: React.FC = () => {
         }
         setIsInviting(true);
         try {
-            await fetch(`${API_URL}/invite`, {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                 showToast("You must be logged in to invite users", "error");
+                 return;
+            }
+
+            const res = await fetch(`${API_URL}/invite`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     email: inviteEmail,
                     roomId,
@@ -270,11 +284,19 @@ export const DataTab: React.FC = () => {
                     projectName: 'Visual DB Project' // We could add a project name field
                 })
             });
+
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || "Invite failed");
+            }
+
             showToast("Invitation Sent!", "success");
             setInviteEmail('');
-        } catch (e) {
+            // Refresh access list to show the new pending user
+            fetchRoomAccessUsers();
+        } catch (e: any) {
             console.error(e);
-            showToast("Failed to send invite", "error");
+            showToast(e.message || "Failed to send invite", "error");
         } finally {
             setIsInviting(false);
         }
@@ -445,6 +467,11 @@ export const DataTab: React.FC = () => {
                          setIsClientMode(true);
                     }
                     console.log(`Verified Access. Role: ${role}. Client Mode: ${role !== 'host'}`);
+                } else if (verification.code === 'NO_ACCESS') {
+                    // User doesn't have access to this room
+                    setIsConnecting(false);
+                    showToast(verification.error || "You don't have access to this room", "error");
+                    return;
                 }
             } catch(e) { console.warn("Role verification failed", e); }
         }
@@ -454,6 +481,13 @@ export const DataTab: React.FC = () => {
             // Check Room Existence (Just peek)
             await api.get(`/graph/${roomId}`); 
         } catch (fetchErr: any) {
+            // Check if it's an access denied error
+            if (fetchErr.message && (fetchErr.message.includes('403') || fetchErr.message.includes('NO_ACCESS'))) {
+                setIsConnecting(false);
+                showToast("You don't have access to this room. Please contact the author.", "error");
+                return;
+            }
+            
             if (fetchErr.message && (fetchErr.message.includes('404') || fetchErr.message.includes('Project not found') || fetchErr.message.includes('Cannot GET'))) {
                 console.log("Room not found, creating new room:", roomId);
                 try {
@@ -579,18 +613,68 @@ export const DataTab: React.FC = () => {
              showToast("Database & Local Data Wiped", "info");
     };
 
-    const handleCopyMagicLink = () => {
+    const handleCopyMagicLink = async () => {
         if (!roomId) {
             showToast("Init Room ID first", "error");
             return;
         }
-        // Encrypt Room ID as well
-        const encodedRoomId = btoa(roomId);
-        const permParam = linkAllowEdit ? 'rw' : 'r';
-        const url = `${window.location.origin}${window.location.pathname}?room=${encodedRoomId}&p=${permParam}`;
-        
-        navigator.clipboard.writeText(url);
-        showToast(`Magic Link (${linkAllowEdit ? 'Edit' : 'Read-Only'}) Copied!`, "success");
+
+        // Require email to generate link
+        if (!inviteEmail) {
+             showToast("Please enter an email to generate a secure link", "warning");
+             return;
+        }
+
+        if (!inviteEmail.includes('@')) {
+             showToast("Please enter a valid email address", "warning");
+             return;
+        }
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                    showToast("You must be logged in to generate invite links", "error");
+                    return;
+            }
+            
+            showToast("Generating secure link...", "info");
+            
+            const res = await fetch(`${API_URL}/invite`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    email: inviteEmail,
+                    roomId,
+                    configStr: '',
+                    origin: window.location.origin + window.location.pathname,
+                    permissions: linkAllowEdit ? 'rw' : 'r',
+                    hostName: config.userProfile.name,
+                    projectName: 'Visual DB Project',
+                    skipEmail: true // Don't send email, just return link
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Failed to generate link");
+            }
+
+            const data = await res.json();
+            if (data.link) {
+                navigator.clipboard.writeText(data.link);
+                showToast(`Secure Link for ${inviteEmail} copied!`, "success");
+                setInviteEmail('');
+                fetchRoomAccessUsers();
+            } else {
+                throw new Error("No link returned from server");
+            }
+        } catch (e: any) {
+                console.error(e);
+                showToast(e.message, "error");
+        }
     };
 
     const toggleLiveMode = async (targetMode: boolean) => {
@@ -913,6 +997,75 @@ export const DataTab: React.FC = () => {
         }
     };
 
+    // Fetch room access users (only for project author)
+    const fetchRoomAccessUsers = async () => {
+        if (!isLiveMode || !currentRoomId || isClientMode) return;
+
+        try {
+            const response = await fetch(
+                `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/graph/${currentRoomId}/access`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+                    }
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+                setRoomAccessUsers(data.users || []);
+            }
+        } catch (err) {
+            console.error("Failed to fetch room access users", err);
+        }
+    };
+
+    // Handle removing user from room
+    const handleRemoveUserFromRoom = async (accessId: string, userName: string) => {
+        setUserToRemove({ accessId, name: userName });
+        setIsRemoveUserConfirmOpen(true);
+    };
+
+    // Confirm and execute user removal
+    const confirmRemoveUser = async () => {
+        if (!userToRemove || !currentRoomId) return;
+
+        try {
+            const response = await fetch(
+                `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/graph/${currentRoomId}/access/${userToRemove.accessId}`,
+                {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+                    }
+                }
+            );
+
+            if (response.ok) {
+                showToast(`${userToRemove.name} has been removed from the project`, "success");
+                // Refresh the access list
+                await fetchRoomAccessUsers();
+            } else {
+                const error = await response.json();
+                showToast(error.error || "Failed to remove user", "error");
+            }
+        } catch (err) {
+            console.error("Error removing user", err);
+            showToast("Failed to remove user from project", "error");
+        } finally {
+            setIsRemoveUserConfirmOpen(false);
+            setUserToRemove(null);
+        }
+    };
+
+    // Fetch room access users when connected to live mode
+    useEffect(() => {
+        if (isLiveMode && isConnected && currentRoomId && !isClientMode) {
+            fetchRoomAccessUsers();
+        }
+    }, [isLiveMode, isConnected, currentRoomId, isClientMode]);
+
     return (
         <div className="space-y-6">
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">{t('data.collab')}</h3>
@@ -991,6 +1144,9 @@ export const DataTab: React.FC = () => {
                             isInvisible={!isUserVisible}
                             toggleInvisible={toggleInvisible}
                             config={config}
+                            isProjectAuthor={!isClientMode && isLiveMode}
+                            onRemoveUser={handleRemoveUserFromRoom}
+                            roomAccessUsers={roomAccessUsers}
                         />
                      </>
 
@@ -1067,6 +1223,20 @@ export const DataTab: React.FC = () => {
                 onConfirm={handleClearGraph}
                 isLiveMode={isLiveMode}
                 t={t}
+            />
+
+            <ConfirmationModal
+                isOpen={isRemoveUserConfirmOpen}
+                onClose={() => {
+                    setIsRemoveUserConfirmOpen(false);
+                    setUserToRemove(null);
+                }}
+                onConfirm={confirmRemoveUser}
+                title={t('user.removeTitle')}
+                message={`${t('user.removeMessage')} "${userToRemove?.name || ''}"?`}
+                confirmText={t('user.removeConfirm')}
+                cancelText={t('cancel')}
+                isDanger={true}
             />
 
             <ConfirmationModal

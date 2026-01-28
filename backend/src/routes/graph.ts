@@ -89,8 +89,34 @@ const checkAccess = (roleRequired: string[] = ['viewer', 'writer', 'admin', 'hos
                 return next();
             }
 
-            const access = await Access.findOne({ projectId: project._id as any, userId: req.user._id as any });
-            if (!access) return res.status(403).json({ error: "Access Denied" });
+            // Check access by userId first
+            let access = await Access.findOne({ 
+                projectId: project._id as any, 
+                userId: req.user._id as any,
+                isDeleted: false 
+            });
+            
+            // If no access by userId, check by email (for invited users)
+            if (!access && req.user.email) {
+                access = await Access.findOne({ 
+                    projectId: project._id as any, 
+                    invitedEmail: req.user.email,
+                    isDeleted: false 
+                });
+                
+                // If found by email but userId is not set, update it now that user has logged in
+                if (access && !access.userId) {
+                    access.userId = req.user._id;
+                    await access.save();
+                }
+            }
+            
+            if (!access) {
+                return res.status(403).json({ 
+                    error: "You have no access for this room. Please contact the author of the room or create a room with a different name.",
+                    code: "NO_ACCESS"
+                });
+            }
 
             if (!roleRequired.includes(access.role)) {
                 return res.status(403).json({ error: "Insufficient Permissions" });
@@ -430,6 +456,19 @@ router.post('/init', authenticate, async (req: any, res) => {
         
         let project = await Project.findOne({ roomId });
         if (!project) {
+            // Check if a project with the same name already exists
+            const existingProjectWithName = await Project.findOne({ 
+                name: name || `Project ${roomId}`,
+                isDeleted: false 
+            });
+
+            if (existingProjectWithName) {
+                return res.status(409).json({ 
+                    error: "You have no access for this room. Please contact the author of the room or create a room with a different name.",
+                    code: "ROOM_NAME_EXISTS"
+                });
+            }
+
             project = await Project.create({
                 roomId,
                 name: name || `Project ${roomId}`,
@@ -442,7 +481,10 @@ router.post('/init', authenticate, async (req: any, res) => {
         // Actually checkAccess uses ownerId field so we are good.
 
         res.json({ success: true, project });
-    } catch(e) { res.status(500).json({ error: "Init Failed" }); }
+    } catch(e) { 
+        const err = e as Error;
+        res.status(500).json({ error: err.message || "Init Failed" }); 
+    }
 });
 
 // Bulk Sync (for migration or full save)
@@ -718,6 +760,69 @@ router.delete('/:projectId/history', authenticate, checkAccess(['writer', 'admin
     } catch (e) {
         console.error("Clear History Failed", e);
         res.status(500).json({ error: "Failed to clear history" });
+    }
+});
+
+// GET Room Access Management - Fetch users with access to this room
+router.get('/:projectId/access', authenticate, checkAccess(['host']), async (req: any, res) => {
+    try {
+        const projectId = req.project._id;
+
+        // Get all access records (both deleted and active)
+        const accessList = await Access.find({ projectId })
+            .populate('userId', 'name email')
+            .sort({ createdAt: -1 });
+
+        // Format response
+        const users = accessList.map(access => ({
+            id: access._id,
+            userId: access.userId,
+            name: (access.userId as any)?.name || 'Unknown',
+            email: (access.userId as any)?.email || access.invitedEmail || 'Unknown',
+            role: access.role,
+            isVisible: access.isVisible,
+            isDeleted: access.isDeleted,
+            invitedEmail: access.invitedEmail,
+            createdAt: access.createdAt
+        }));
+
+        res.json({ success: true, users });
+    } catch (e) {
+        console.error("Failed to fetch access list", e);
+        res.status(500).json({ error: "Failed to fetch access list" });
+    }
+});
+
+// DELETE User from Room Access - Soft delete by access ID
+router.delete('/:projectId/access/:accessId', authenticate, checkAccess(['host']), async (req: any, res) => {
+    try {
+        const { projectId, accessId } = req.params;
+        const project = req.project;
+
+        // Verify this access record belongs to this project
+        const access = await Access.findOne({ _id: accessId, projectId: project._id });
+        if (!access) {
+            return res.status(404).json({ error: "Access record not found" });
+        }
+
+        // Cannot remove the host/owner
+        if (access.role === 'host' || project.ownerId.toString() === access.userId?.toString()) {
+            return res.status(403).json({ error: "Cannot remove project owner" });
+        }
+
+        // Soft delete the access record
+        await Access.findByIdAndUpdate(accessId, { isDeleted: true, updatedAt: new Date() });
+
+        // Notify other users in the room
+        getIO().to(req.params.projectId).emit('user:removed', {
+            accessId,
+            message: `User removed from project`
+        });
+
+        res.json({ success: true, message: "User removed from project" });
+    } catch (e) {
+        console.error("Failed to remove user from access", e);
+        res.status(500).json({ error: "Failed to remove user" });
     }
 });
 

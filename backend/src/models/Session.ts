@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ISession extends Document {
     socketId: string;
     roomId: string;
+    userId?: string; // Stable ID to prevent duplicates
     userEmail?: string;
     userName: string;
     userColor: string;
@@ -13,6 +14,7 @@ export interface ISession extends Document {
 const SessionSchema: Schema = new Schema({
     socketId: { type: String, required: true, unique: true },
     roomId: { type: String, required: true },
+    userId: { type: String }, // New field
     userEmail: { type: String },
     userName: { type: String, default: 'Guest' },
     userColor: { type: String, default: '#ccc' },

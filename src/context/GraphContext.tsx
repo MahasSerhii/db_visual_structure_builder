@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { NodeData, EdgeData, User, AppSettings, Comment } from '../utils/types';
-import { dbOp, initDB } from '../utils/indexedDB';
+import { dbOp, initDB, deleteWholeDB } from '../utils/indexedDB';
 import { getTranslation } from '../utils/translations';
 import { api, uploadFullGraphToBackend } from '../utils/api';
 import { io, Socket } from 'socket.io-client';
@@ -180,9 +180,11 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  // Ensure we don't send empty/default profiles if we have them stored but not loaded in state yet?
                  // Actually relying on 'config' state is best, as it updates when storage loads.
                  const sessionUserName = config.userProfile.name || localStorage.getItem('my_user_name') || 'Anonymous';
+                 const sessionUserId = localStorage.getItem('my_user_id'); // Stabilize identity
                  
                  socket.emit('join-room', {
                      roomId: currentRoomId,
+                     userId: sessionUserId, // Use stable ID for deduplication
                      userName: sessionUserName,
                      userColor: config.userProfile.color,
                      userEmail: (authProvider === 'email' ? 'hidden' : undefined),
@@ -385,27 +387,31 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const logout = async () => {
-        // Only clear Auth Tokens and User Profile
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('auth_provider');
-        localStorage.removeItem('my_user_name');
-        localStorage.removeItem('saved_projects');
-        
-        sessionStorage.clear();
+        // 1. Clear IndexedDB (Best Effort)
+        try {
+            await deleteWholeDB();
+        } catch (e) {
+            console.error("Failed to delete DB on logout", e);
+        }
 
+        // 2. Clear Local & Session Storage - FORCE EVERYTHING
+        localStorage.clear(); 
+        sessionStorage.clear();
+        
+        // Double check specific sensitive keys to be absolutely sure
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('app_config');
+        localStorage.removeItem('current_room_id');
+        localStorage.removeItem('my_user_id');
+
+        // 3. Reset State
         setIsAuthenticated(false);
         setSavedProjects([]);
+        setNodes([]);
+        setEdges([]);
+        setComments([]);
         
-        // Reset Profile to Guest
-        const guestConfig = { 
-            ...config, 
-            userProfile: { name: 'Guest', color: config.userProfile.color } 
-        };
-        
-        // Save to Storage immediately before reload
-        localStorage.setItem('app_config', JSON.stringify(guestConfig));
-        
-        // Reload to update UI state properly (Optional, but safer for Auth Context update)
+        // 4. Force Reload to ensure clean slate
         window.location.reload();
     };
 
