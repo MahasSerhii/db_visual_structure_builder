@@ -12,13 +12,20 @@ type Tab = 'create' | 'connect' | 'data' | 'settings' | 'ai';
 export const Sidebar: React.FC = () => {
     const { t } = useGraph();
     const [isOpen, setIsOpen] = useState(true);
-    const [activeTab, setActiveTab] = useState<Tab>('create');
+    const [activeTab, setActiveTab] = useState<Tab>(() => {
+        return (localStorage.getItem('sidebar_active_tab') as Tab) || 'create';
+    });
+
+    const handleTabChange = (tab: Tab) => {
+        setActiveTab(tab);
+        localStorage.setItem('sidebar_active_tab', tab);
+    };
 
     const toggleSidebar = () => setIsOpen(!isOpen);
 
     const NavBtn = ({ id, icon: Icon, label }: { id: Tab, icon: any, label: string }) => (
         <button 
-            onClick={() => setActiveTab(id)} 
+            onClick={() => handleTabChange(id)} 
             className={`p-2 rounded-xl transition relative group ${activeTab === id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-slate-700'}`}
             title={label}
         >
@@ -50,7 +57,10 @@ export const Sidebar: React.FC = () => {
                  <div id="sidebar-content" className="flex-grow overflow-y-auto w-full p-0 relative custom-scrollbar">
                      {activeTab === 'create' && <div className="p-6"><CreateTab /></div>}
                      {activeTab === 'connect' && <div className="p-6"><ConnectTab /></div>}
-                     {activeTab === 'data' && <div className="p-6"><DataTab /></div>}
+                     {/* Keep DataTab mounted but hidden to align with user expectation of persistent connection */}
+                     <div className={`p-6 ${activeTab === 'data' ? 'block' : 'hidden'}`}>
+                         <DataTab />
+                     </div>
                      {activeTab === 'settings' && <div className="p-6"><SettingsTab /></div>}
                      {activeTab === 'ai' && <Chatbot />}
                  </div>

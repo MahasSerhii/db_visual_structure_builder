@@ -1,0 +1,39 @@
+[
+  {
+    "email": "serhii.mahas@evalue.cz",
+    "passwordHash": "$2b$10$wGX3Lddrf3li5BX3FenaA.xYzCWvpjD7CWjTwF2FiB/uu4yuD.FYi",
+    "createdAt": 1768835332155,
+    "savedProjects": [
+      {
+        "id": "new_db",
+        "name": "Project new_db",
+        "author": "serhii.mahas",
+        "url": "http://localhost:5173/",
+        "configStr": "ewogIGFwaUtleTogIkFJemFTeUF2WndXOThRamQ0NEFzZEJSNlFzWnNRVTNoUVFma000USIsCiAgYXV0aERvbWFpbjogImRiLXZpc3VhbGlzYXRpb24tYXBwLmZpcmViYXNlYXBwLmNvbSIsCiAgZGF0YWJhc2VVUkw6ICJodHRwczovL2RiLXZpc3VhbGlzYXRpb24tYXBwLWRlZmF1bHQtcnRkYi5ldXJvcGUtd2VzdDEuZmlyZWJhc2VkYXRhYmFzZS5hcHAiLAogIHByb2plY3RJZDogImRiLXZpc3VhbGlzYXRpb24tYXBwIiwKICBzdG9yYWdlQnVja2V0OiAiZGItdmlzdWFsaXNhdGlvbi1hcHAuZmlyZWJhc2VzdG9yYWdlLmFwcCIsCiAgbWVzc2FnaW5nU2VuZGVySWQ6ICI4NDU3MDQwMTI0MjEiLAogIGFwcElkOiAiMTo4NDU3MDQwMTI0MjE6d2ViOmEwNzBiZmRkOTY5Y2FlM2Y2OGJmZWMiLAogIG1lYXN1cmVtZW50SWQ6ICJHLUI3WkpQNldRUzMiCn0=",
+        "lastAccessed": 1769100880996,
+        "role": "guest"
+      }
+    ],
+    "id": "b12bca17-6a25-4410-8de8-2aeab6e50574",
+    "name": "serhii.mahas",
+    "color": "#6366F1"
+  },
+  {
+    "email": "sergon1989@gmail.com",
+    "passwordHash": "SOCIAL_LOGIN",
+    "name": "Серж Маг",
+    "createdAt": 1768995462140,
+    "savedProjects": [
+      {
+        "id": "new_db",
+        "name": "Project new_db",
+        "configStr": "ewogIGFwaUtleTogIkFJemFTeUF2WndXOThRamQ0NEFzZEJSNlFzWnNRVTNoUVFma000USIsCiAgYXV0aERvbWFpbjogImRiLXZpc3VhbGlzYXRpb24tYXBwLmZpcmViYXNlYXBwLmNvbSIsCiAgZGF0YWJhc2VVUkw6ICJodHRwczovL2RiLXZpc3VhbGlzYXRpb24tYXBwLWRlZmF1bHQtcnRkYi5ldXJvcGUtd2VzdDEuZmlyZWJhc2VkYXRhYmFzZS5hcHAiLAogIHByb2plY3RJZDogImRiLXZpc3VhbGlzYXRpb24tYXBwIiwKICBzdG9yYWdlQnVja2V0OiAiZGItdmlzdWFsaXNhdGlvbi1hcHAuZmlyZWJhc2VzdG9yYWdlLmFwcCIsCiAgbWVzc2FnaW5nU2VuZGVySWQ6ICI4NDU3MDQwMTI0MjEiLAogIGFwcElkOiAiMTo4NDU3MDQwMTI0MjE6d2ViOmEwNzBiZmRkOTY5Y2FlM2Y2OGJmZWMiLAogIG1lYXN1cmVtZW50SWQ6ICJHLUI3WkpQNldRUzMiCn0=",
+        "author": "Серж Маг",
+        "url": "http://localhost:5173/",
+        "role": "host",
+        "lastAccessed": 1769100938173
+      }
+    ],
+    "id": "30642b0e-09e4-405a-a8cb-25263768eb5f"
+  }
+]

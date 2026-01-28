@@ -44,7 +44,7 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
     };
 
     const handleDelete = () => {
-        if(confirm("Delete this component?")) {
+        if(confirm(t('edit.del.confirm'))) {
             onDelete(node.id);
             onClose();
         }
@@ -98,14 +98,14 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                         <div className="flex gap-1">
                             <button 
                                 onClick={() => setLocked(!locked)} 
-                                title={locked ? "Unlock" : "Lock"}
+                                title={locked ? t('edit.lock.unlock') : t('edit.lock.lock')}
                                 className={`p-1.5 rounded transition ${locked ? 'bg-amber-100 text-amber-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-200'}`}
                             >
                                 {locked ? <Unlock size={18} /> : <Lock size={18} />}
                             </button>
                             <button 
                                 onClick={handleDuplicate}
-                                title="Duplicate Node"
+                                title={t('edit.duplicate.title')}
                                 className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition"
                             >
                                 <Copy size={18} />
@@ -173,21 +173,21 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                                                     disabled={locked}
                                                     onChange={e => updateProp(i, 'color', e.target.value)}
                                                     className="w-4 h-6 border-none bg-transparent cursor-pointer rounded overflow-hidden p-0"
-                                                    title="Property Color"
+                                                    title={t('edit.prop.color.title')}
                                                 />
                                                 
                                                 <input 
                                                     value={p.name} 
                                                     disabled={locked}
                                                     onChange={e => updateProp(i, 'name', e.target.value)} 
-                                                    placeholder="Name"
+                                                    placeholder={t('edit.prop.name.placeholder')}
                                                     className={`flex-1 text-xs p-1.5 border rounded ${locked ? 'bg-gray-100' : 'bg-white'}`} 
                                                 />
                                                 <input 
                                                     value={p.type} 
                                                     disabled={locked}
                                                     onChange={e => updateProp(i, 'type', e.target.value)} 
-                                                    placeholder="Type"
+                                                    placeholder={t('edit.prop.type.placeholder')}
                                                     className={`w-20 text-xs p-1.5 border rounded text-gray-500 font-mono ${locked ? 'bg-gray-100' : 'bg-white'}`} 
                                                 />
                                                 {!locked && (
@@ -208,7 +208,7 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                         ) : (
                             <div className="space-y-3">
                                 {nodeEdges.length === 0 ? (
-                                    <div className="text-center py-8 text-gray-400 text-xs">No active connections</div>
+                                    <div className="text-center py-8 text-gray-400 text-xs">{t('edit.conn.none')}</div>
                                 ) : (
                                     nodeEdges.map(edge => {
                                         // Resolve actual objects (or IDs if objects not hydrated)
@@ -224,7 +224,7 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                                                     <div className="flex items-center gap-2 font-medium text-gray-700">
                                                         {isSource ? (
                                                             <>
-                                                                <span className="text-indigo-600 font-bold">This</span>
+                                                                <span className="text-indigo-600 font-bold">{t('edit.conn.this')}</span>
                                                                 <ArrowRight size={12} className="text-gray-400" />
                                                                 <span>{otherTitle}</span>
                                                             </>
@@ -232,7 +232,7 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                                                             <>
                                                                 <span>{otherTitle}</span>
                                                                 <ArrowRight size={12} className="text-gray-400" />
-                                                                <span className="text-indigo-600 font-bold">This</span>
+                                                                <span className="text-indigo-600 font-bold">{t('edit.conn.this')}</span>
                                                             </>
                                                         )}
                                                     </div>
@@ -244,11 +244,11 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                                                     <div className="flex flex-col gap-1 text-gray-500">
                                                         <div className="flex items-center gap-1">
                                                             <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-                                                            <span>{edge.sourceProp || '(Body)'}</span>
+                                                            <span>{edge.sourceProp || t('edit.conn.body')}</span>
                                                         </div>
                                                         <div className="flex items-center gap-1">
                                                             <span className="w-1.5 h-1.5 rounded-full bg-gray-300"></span>
-                                                            <span>{edge.targetProp || '(Body)'}</span>
+                                                            <span>{edge.targetProp || t('edit.conn.body')}</span>
                                                         </div>
                                                     </div>
                                                     <div className="flex gap-2">
@@ -263,7 +263,7 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                                                             }} 
                                                             disabled={locked || nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source)))?.locked}
                                                             className={`p-1.5 rounded border border-gray-200 transition ${(locked || nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source)))?.locked) ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50'}`}
-                                                            title={locked ? "Locked" : "Edit Connection"}
+                                                            title={locked ? t('edit.lock.locked') : t('edit.conn.edit')}
                                                         >
                                                             <Edit2 size={14} />
                                                         </button>
@@ -273,13 +273,13 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                                                                 const otherNode = nodes.find(n => n.id === otherNodeId);
                                                                 const isEdgeLocked = locked || (otherNode?.locked);
 
-                                                                if(!isEdgeLocked && confirm("Disconnect?")) {
+                                                                if(!isEdgeLocked && confirm(t('edit.conn.disconnect.confirm'))) {
                                                                     deleteEdge(edge.id);
                                                                 }
                                                             }}
                                                             disabled={locked || nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source)))?.locked}
                                                             className={`p-1.5 rounded border border-gray-200 transition ${(locked || nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source)))?.locked) ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50'}`}
-                                                            title={locked ? "Locked" : "Disconnect"}
+                                                            title={locked ? t('edit.lock.locked') : t('edit.conn.disconnect')}
                                                         >
                                                             <Unplug size={14} />
                                                         </button>

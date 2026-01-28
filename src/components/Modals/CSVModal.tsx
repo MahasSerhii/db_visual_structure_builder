@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { useGraph } from '../../context/GraphContext';
 import { useToast } from '../../context/ToastContext';
-import { X, Download, Upload } from 'lucide-react';
+import { X, Download, Upload, FileSpreadsheet, FileText } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { NodeData, EdgeData } from '../../utils/types';
 import { dbOp } from '../../utils/indexedDB';
+import { uploadFullGraphToBackend } from '../../utils/api';
+import * as XLSX from 'xlsx';
+
 
 interface CSVModalProps {
     isOpen: boolean;
@@ -12,11 +15,116 @@ interface CSVModalProps {
 }
 
 export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
-    const { nodes, edges, refreshData } = useGraph();
+    const { nodes, edges, refreshData, isReadOnly, t, isLiveMode, currentRoomId, comments } = useGraph();
+
     const { showToast } = useToast();
     const [importFile, setImportFile] = useState<File | null>(null);
+    const [activeTab, setActiveTab] = useState<'csv' | 'excel'>('csv');
 
     if (!isOpen) return null;
+
+    const exportToExcel = () => {
+         const wb = XLSX.utils.book_new();
+         
+         // Nodes Sheet
+         const nodesData = nodes.map(n => ({
+             id: n.id,
+             title: n.title,
+             description: n.description,
+             color: n.color,
+             x: n.x,
+             y: n.y,
+             docLink: n.docLink,
+             props: JSON.stringify(n.props || [])
+         }));
+         const wsNodes = XLSX.utils.json_to_sheet(nodesData);
+         XLSX.utils.book_append_sheet(wb, wsNodes, "Components");
+
+         // Edges Sheet
+         const edgesData = edges.map(e => ({
+             id: e.id,
+             source: typeof e.source === 'object' ? (e.source as any).id : e.source,
+             target: typeof e.target === 'object' ? (e.target as any).id : e.target,
+             label: e.label,
+             sourceProp: e.sourceProp,
+             targetProp: e.targetProp
+         }));
+         const wsEdges = XLSX.utils.json_to_sheet(edgesData);
+         XLSX.utils.book_append_sheet(wb, wsEdges, "Connections");
+
+         XLSX.writeFile(wb, `graph_data_${new Date().getTime()}.xlsx`);
+         showToast(t('csv.toast.exportSuccess'), "success");
+    };
+
+    const importFromExcel = async () => {
+        if (!importFile) {
+            showToast(t('csv.toast.selectFile'), "error");
+            return;
+        }
+
+        if (isLiveMode) {
+            if (!confirm("⚠️ CAUTION: You are importing data in LIVE Mode.\n\nThis will OVERWRITE the remote database.\n\nContinue?")) {
+                return;
+            }
+        } else {
+            if (nodes.length > 0 && !confirm(t('csv.confirm.overwrite'))) {
+                return;
+            }
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const data = e.target?.result;
+            try {
+                const wb = XLSX.read(data, { type: 'binary' });
+                const newNodes: NodeData[] = [];
+                const newEdges: EdgeData[] = [];
+
+                // Parse Nodes
+                if (wb.Sheets["Components"]) {
+                    const rawNodes = XLSX.utils.sheet_to_json(wb.Sheets["Components"]);
+                    rawNodes.forEach((obj: any) => {
+                         let props = [];
+                         try { if (obj.props) props = JSON.parse(obj.props); } catch(e){}
+                         
+                         newNodes.push({
+                            id: obj.id || uuidv4(),
+                            title: obj.title || 'Untitled',
+                            description: obj.description || '',
+                            color: obj.color || '#6366F1',
+                            x: parseFloat(obj.x) || 0,
+                            y: parseFloat(obj.y) || 0,
+                            docLink: obj.docLink,
+                            props: props,
+                            createdAt: new Date().toISOString()
+                         });
+                    });
+                }
+
+                // Parse Edges
+                if (wb.Sheets["Connections"]) {
+                    const rawEdges = XLSX.utils.sheet_to_json(wb.Sheets["Connections"]);
+                    rawEdges.forEach((obj: any) => {
+                        newEdges.push({
+                            id: obj.id || uuidv4(),
+                            source: obj.source,
+                            target: obj.target,
+                            label: obj.label,
+                            sourceProp: obj.sourceProp,
+                            targetProp: obj.targetProp
+                        });
+                    });
+                }
+                
+                await updateGraph(newNodes, newEdges);
+
+            } catch (err) {
+                console.error(err);
+                showToast(t('csv.toast.failparse'), "error");
+            }
+        };
+        reader.readAsBinaryString(importFile);
+    };
 
     const handleDownloadCSV = () => {
         // Headers
@@ -66,11 +174,80 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
         link.click();
         document.body.removeChild(link);
     };
+    
+    const updateGraph = async (newNodes: NodeData[], newEdges: EdgeData[]) => {
+        // Bulk Replace Logic
+        await dbOp('nodes', 'readwrite', 'clear');
+        await dbOp('edges', 'readwrite', 'clear');
+
+        for (const node of newNodes) {
+            await dbOp('nodes', 'readwrite', 'put', node);
+        }
+        for (const edge of newEdges) {
+            await dbOp('edges', 'readwrite', 'put', edge);
+        }
+
+        // Force UI update even if in Live Mode (local reflection)
+        await refreshData(true);
+
+        // If in Live Mode, push to remote
+        if (isLiveMode) {
+            try {
+                if (!currentRoomId) {
+                      return  console.error("Room id is not exists");
+                  }
+                 // Push everything including potentially empty comments if not imported
+                 // Ideally we should preserve comments or ask user. 
+                 // Current logic wipes DB so comments are wiped too.
+                 // We should probably check if CSV includes comments? 
+                 // The current CSV implementation does NOT include comments in export/import.
+                 // So we must be careful not to wipe remote comments if we want to keep them.
+                 // BUT, user asked to replace graph. 
+                 // Since CSV doesn't support comments, we'll sync empty comments or preserve local ones?
+                 // The code above wipes local 'nodes' and 'edges'. It does NOT wipe 'comments' explicitly in the code I see above 
+                 // (lines 173-174 only clear nodes/edges).
+                 // So comments persist locallly?
+                 
+                 // Wait, I should check lines 173-174 again.
+                 // Yes:
+                 // await dbOp('nodes', 'readwrite', 'clear');
+                 // await dbOp('edges', 'readwrite', 'clear');
+                 
+                 // So comments remain in IndexedDB!
+                 
+                 // Retrieve comments to push
+                 const currentComments = await dbOp('comments', 'readonly', 'getAll') as any[];
+                 if (currentRoomId) {
+                     await uploadFullGraphToBackend(currentRoomId, newNodes, newEdges, currentComments, true);
+                 }
+                 showToast(t('csv.toast.success') + " (Synced to Live)", "success");
+             } catch(e) {
+                 console.error("CSV Sync Failed", e);
+                 showToast("Imported locally but Sync failed", "warning");
+             }
+        } else {
+             showToast(t('csv.toast.success'), "success");
+        }
+        
+        onClose();
+    };
 
     const handleProcessImport = () => {
         if (!importFile) {
-            showToast("Please select a file.", "error");
+            showToast(t('csv.toast.selectFile'), "error");
             return;
+        }
+
+        // Live Mode Warning
+        if (isLiveMode) {
+            if (!confirm("⚠️ CAUTION: You are importing data in LIVE Mode.\n\nThis will OVERWRITE the remote database.\n\nContinue?")) {
+                return;
+            }
+        } else {
+            // CSV logic with confirmation
+            if (nodes.length > 0 && !confirm(t('csv.confirm.overwrite'))) {
+                return;
+            }
         }
 
         const reader = new FileReader();
@@ -133,24 +310,11 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
                     }
                 }
                 
-                // Bulk Replace Logic
-                await dbOp('nodes', 'readwrite', 'clear');
-                await dbOp('edges', 'readwrite', 'clear');
-
-                for (const node of newNodes) {
-                    await dbOp('nodes', 'readwrite', 'put', node);
-                }
-                for (const edge of newEdges) {
-                    await dbOp('edges', 'readwrite', 'put', edge);
-                }
-
-                await refreshData();
-                showToast(`Imported ${newNodes.length} nodes and ${newEdges.length} edges!`, "success");
-                onClose();
+                await updateGraph(newNodes, newEdges);
 
             } catch (err) {
                 console.error(err);
-                showToast("Failed to parse or import CSV.", "error");
+                showToast(t('csv.toast.failcsv'), "error");
             }
         };
         reader.readAsText(importFile);
@@ -158,46 +322,73 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
 
     return (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center">
-            <div className="bg-white rounded-2xl border border-gray-200 w-full max-w-2xl shadow-2xl p-6 flex flex-col max-h-[90vh] overflow-y-auto relative">
+            <div className="bg-white rounded-2xl border border-gray-200 w-full max-w-2xl shadow-2xl p-6 flex flex-col max-h-[90vh] overflow-y-auto relative dark:bg-slate-900 dark:border-slate-800">
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-bold text-indigo-600">CSV Data Manager</h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">
+                    <h2 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{t('csv.title')}</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl dark:hover:text-gray-200">
                         <X size={24} />
+                    </button>
+                </div>
+                
+                {/* Format Toggles */}
+                <div className="flex p-1 bg-gray-100 rounded-lg mb-6 w-fit mx-auto dark:bg-slate-800">
+                    <button 
+                        onClick={() => setActiveTab('csv')}
+                        className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition ${activeTab === 'csv' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                    >
+                        <FileText size={16} /> CSV
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('excel')}
+                         className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition ${activeTab === 'excel' ? 'bg-white text-green-600 shadow-sm dark:bg-slate-700 dark:text-green-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                    >
+                        <FileSpreadsheet size={16} /> Excel
                     </button>
                 </div>
 
                 {/* Export Section */}
-                <div className="mb-8 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <h3 className="font-bold text-gray-800 mb-2">1. Export to Single File</h3>
-                    <p className="text-xs text-gray-500 mb-4">Download your entire graph (components & connections) in one CSV file.</p>
-                    <button onClick={handleDownloadCSV} className="w-full bg-white border border-gray-300 hover:bg-indigo-50 text-indigo-600 font-bold py-3 rounded-lg transition shadow-sm flex justify-center items-center gap-2">
+                <div className="mb-8 p-4 bg-gray-50 rounded-xl border border-gray-200 dark:bg-slate-800 dark:border-slate-700">
+                    <h3 className="font-bold text-gray-800 mb-2 dark:text-gray-200">{t('csv.export.title')}</h3>
+                    <p className="text-xs text-gray-500 mb-4 dark:text-gray-400">{t('csv.export.desc')}</p>
+                    <button 
+                        onClick={activeTab === 'csv' ? handleDownloadCSV : exportToExcel} 
+                        className={`w-full bg-white border hover:bg-gray-50 font-bold py-3 rounded-lg transition shadow-sm flex justify-center items-center gap-2 dark:bg-slate-700 dark:border-slate-600 dark:hover:bg-slate-600 ${activeTab === 'csv' ? 'text-indigo-600 border-gray-300 dark:text-indigo-300' : 'text-green-600 border-green-200 dark:text-green-400'}`}
+                    >
                         <Download size={16} />
-                        <span>Download Combined Data.csv</span>
+                        <span>{activeTab === 'csv' ? t('csv.export.btnCsv') : t('csv.export.btnExcel')}</span>
                     </button>
                 </div>
 
-                {/* Import Section */}
-                <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
-                    <h3 className="font-bold text-emerald-800 mb-2">2. Import Single File</h3>
-                    <p className="text-xs text-emerald-700 mb-4">Upload a combined CSV file to update the graph. <br /><strong>Note:</strong> Uploading will replace the current graph data.</p>
+                {/* Import Section (Conditioned on ReadOnly) */}
+                {!isReadOnly ? (
+                <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800">
+                    <h3 className="font-bold text-emerald-800 mb-2 dark:text-emerald-300">{t('csv.import.title')}</h3>
+                    <p className="text-xs text-emerald-700 mb-4 dark:text-emerald-400">{t('csv.import.desc')}</p>
                     
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-1">Upload Data File</label>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1 dark:text-gray-400">{t('csv.import.uploadLabel')} ({activeTab.toUpperCase()})</label>
                             <input 
                                 type="file" 
-                                accept=".csv"
+                                accept={activeTab === 'csv' ? ".csv" : ".xlsx, .xls"}
                                 onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-                                className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200" 
+                                className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 dark:file:bg-emerald-900 dark:file:text-emerald-300" 
                             />
                         </div>
                         
                         <button onClick={handleProcessImport} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition shadow dark:shadow-none flex justify-center items-center gap-2">
                             <Upload size={16} />
-                            Process File & Update Graph
+                            {t('csv.import.processBtn')}
                         </button>
                     </div>
                 </div>
+                ) : (
+                    <div className="p-4 bg-gray-100 rounded-xl border border-gray-200 text-center dark:bg-slate-800 dark:border-slate-700">
+                        <h3 className="font-bold text-gray-500 mb-1 dark:text-gray-400">{t('csv.import.disabledTitle')}</h3>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">{t('csv.import.disabledDesc')}</p>
+                    </div>
+                )}
+
             </div>
         </div>
     );

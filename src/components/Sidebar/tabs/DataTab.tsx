@@ -1,268 +1,555 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGraph } from '../../../context/GraphContext';
 import { useToast } from '../../../context/ToastContext';
-import { Download, Upload, Database, FileSpreadsheet, PlayCircle, Unplug, Link as LinkIcon, Trash, History, Crown, User, ToggleLeft, ToggleRight, Radio, ChevronDown, ChevronUp, DownloadCloud, UploadCloud } from 'lucide-react';
-import { initFirebase, connectToRoom, disconnectRoom, subscribeToUsers, uploadFullGraph, fetchRoomData } from '../../../utils/firebase';
+import { NodeData, EdgeData } from '../../../utils/types';
+// Firebase imports removed
+
 import { CSVModal } from '../../Modals/CSVModal';
 import { HistoryModal } from '../../Modals/HistoryModal';
+import { AuthModal, AuthMode } from '../../Modals/AuthModal';
 import { ConfirmationModal } from '../../Modals/ConfirmationModal';
+import { SyncConflictModal } from '../../Modals/SyncConflictModal';
+
+
 import { dbOp } from '../../../utils/indexedDB';
+import { LoadingKitty } from '../../UI/LoadingKitty';
+// FirebaseConfigSection import removed
+
+import { RoomConnectionSection } from './DataTabParts/RoomConnectionSection';
+import { TeamInviteSection } from './DataTabParts/TeamInviteSection';
+import { ActiveUsersList } from './DataTabParts/ActiveUsersList';
+import { DataActionsSection } from './DataTabParts/DataActionsSection';
+import { downloadJSON, processImportFile, wipeDatabase } from '../../../utils/dataTabUtils';
+import { uploadFullGraphToBackend, api } from '../../../utils/api';
+
+
+
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api') + '/auth';
 
 export const DataTab: React.FC = () => {
-    const { config, nodes, edges, comments, refreshData, isLiveMode, setLiveMode, setGraphData, currentRoomId, setCurrentRoomId, t } = useGraph();
+    const { 
+        config, nodes, edges, comments, refreshData, isLiveMode, setLiveMode, setGraphData, 
+        currentRoomId, setCurrentRoomId, isReadOnly, setReadOnly, t, isAuthenticated, login, logout, 
+        activeUsers, connectionStatus, setTransitioningToLive, updateConfig, updateProjectBackground,
+        isUserVisible, toggleUserVisibility 
+    } = useGraph();
     const { showToast } = useToast();
-    const [firebaseConfig, setFirebaseConfig] = useState('');
     // Initialize Local RoomID from Context if we are in Live Mode
-    const [roomId, setRoomId] = useState(isLiveMode && currentRoomId ? currentRoomId : '');
-    const [isFirebaseReady, setIsFirebaseReady] = useState(false);
-    const [isConnected, setIsConnected] = useState(isLiveMode && !!currentRoomId);
+    const [roomId, setRoomId] = useState(() => {
+        if (isLiveMode && currentRoomId) return currentRoomId;
+        return sessionStorage.getItem('room_id_session') || '';
+    });
+
+    // Always start disconnected on mount to ensure fresh socket connection on reload
+    // BUT if we have a session room, start as 'Restoring' to hide the input
+    const [isRestoringSession, setIsRestoringSession] = useState(() => !!sessionStorage.getItem('room_id_session'));
+    const [isConnected, setIsConnected] = useState(false);
+    
     const [isCSVModalOpen, setCSVModalOpen] = useState(false);
     const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
-    const [connectedUsers, setConnectedUsers] = useState<any[]>([]);
+    
+    // connectedUsers removed - using Context
     const [isUsersListOpen, setIsUsersListOpen] = useState(false);
+    
+    // Auth Components
+    const [isAuthModalOpen, setAuthModalOpen] = useState(false);
+    const [authModalState, setAuthModalState] = useState<AuthMode>('LOGIN');
+    const [authModalEmail, setAuthModalEmail] = useState('');
+    const [incomingInviteToken, setIncomingInviteToken] = useState('');
+    const [resetToken, setResetToken] = useState('');
+
     // Initialize ClientMode derived from URL to prevent UI flicker
+    // UPDATED: Now we treat "Client Mode" (Guest UI) as default ONLY if we are not the Host.
+    // We update this state after role verification.
     const [isClientMode, setIsClientMode] = useState(() => {
         const p = new URLSearchParams(window.location.search);
-        return !!p.get('config') && !!p.get('room');
+        // Default to client mode if link parameters exist
+        return (!!p.get('config') && !!p.get('room')) || !!p.get('token');
     });
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [configError, setConfigError] = useState<string | null>(null);
+    const [linkAllowEdit, setLinkAllowEdit] = useState(true);
     const hasShownErrorToast = useRef(false);
+    const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
-    // Initial Load of Config
+    // Sync Conflict State
+    const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+    const [isDisconnectModalOpen, setIsDisconnectModalOpen] = useState(false);
+    const [pendingRemoteData, setPendingRemoteData] = useState<any>(null);
+
+    // Auth State
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [isInviting, setIsInviting] = useState(false);
+    const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('auth_token'));
+    const [loginEmail, setLoginEmail] = useState('');
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
+    const [showLoginUI, setShowLoginUI] = useState(false);
+
+
+    // Sync local connecting state with global connection status
     useEffect(() => {
-        const storedConfig = localStorage.getItem('fb_config_str');
-        if(storedConfig) {
-            setFirebaseConfig(storedConfig);
-            setRememberMe(true);
-            // Auto Init if stored
-            try {
-                const fbConfig = new Function("return " + storedConfig)();
-                if (initFirebase(fbConfig)) {
-                     setIsFirebaseReady(true);
-                     showToast("Restored Firebase Connection", 'info');
-                }
-            } catch(e) { /* ignore */ }
+        // If the global status is resolved (failed or connected), ensure we stop showing local loaders
+        // This prevents the Sidebar loader from "hanging" if the GraphContext connection fails faster than 
+        // local checks in toggleLiveMode/handleConnect.
+        if (connectionStatus === 'failed' || connectionStatus === 'connected') {
+             setIsConnecting(false);
+             setTransitioningToLive(false);
         }
-    }, []);
+    }, [connectionStatus, setTransitioningToLive]);
 
-    // Handle Magic Link Auto-Connect
+
+    // Handle Link Auto-Connect & Token Ops
     useEffect(() => {
-        // Auto-connect mechanism once setup is complete
-        if(isFirebaseReady && roomId && isClientMode && !isConnected && !isConnecting) {
-             handleConnect();
-             return;
-        }
-
         const params = new URLSearchParams(window.location.search);
         const configParam = params.get('config');
         const roomParam = params.get('room');
+        const permParam = params.get('p');
+        const tokenParam = params.get('token');
+        const resetTokenParam = params.get('reset_token');
 
-        // Initial Parsing Logic (Only run if params exist and we haven't set up yet)
-        if (configParam && roomParam && !isFirebaseReady) {
-            let success = false;
-            let targetRoomId = roomParam;
-
-            // 1. Try to Decode Config
-            try {
-                const decodedConfig = atob(configParam.trim());
-                // Use Function constructor for lenient parsing (handles unquoted keys etc)
-                const parsed = new Function("return " + decodedConfig)();
-                setFirebaseConfig(decodedConfig);
-                if (initFirebase(parsed)) success = true;
-            } catch (e) {
-                // Heuristic Fallback
-                try {
-                     // Also lenient parse for direct param
-                     const directParse = new Function("return " + configParam)();
-                     if(initFirebase(directParse)) {
-                         setFirebaseConfig(configParam);
-                         success = true;
-                     }
-                } catch(e2) { /* ignore */ }
-            }
-
-            // 2. Try to Decode Room ID safely
-            try {
-                const decodedRoom = atob(roomParam);
-                // Validation: Only accept if it decodes to printable ASCII characters
-                // ASCII 32-126 are printable. This prevents garbage interpretation of legacy plain text.
-                if (/^[\x20-\x7E]+$/.test(decodedRoom)) {
-                     targetRoomId = decodedRoom;
-                }
-            } catch(e) {
-                // Not base64, keep original
-                targetRoomId = roomParam;
-            }
-
-            if (success) {
-                 setIsFirebaseReady(true);
-                 setIsClientMode(true); 
-                 setConfigError(null);
-                 setRoomId(targetRoomId);
-                 // Note: handleConnect will be triggered by the effect re-running due to state updates
-            } else {
-                 const msg = "Invalid Invite Link - Check Config";
-                 setConfigError(msg);
-                 if (!hasShownErrorToast.current) {
-                     showToast(msg, "error");
-                     hasShownErrorToast.current = true;
-                 }
-            }
-        } else if (roomParam && !roomId) {
-             setRoomId(roomParam);
-        }
-    }, [isFirebaseReady, roomId, isClientMode, isConnected, isConnecting]); 
-
-    // Auto-toggle "connected" visual and resume state on re-mount
-    useEffect(() => {
-        // If we are live and have a room ID in context, sync local state
-        if (isLiveMode && currentRoomId) {
-            setIsConnected(true);
-            // If RoomID was not set (e.g. state reset on unmount), restore it
-            if (!roomId) setRoomId(currentRoomId);
-            
-            // Re-subscribe to users since local listeners are lost on unmount
-            subscribeToUsers(currentRoomId, (users) => {
-                 if (users) {
-                     const list = Object.entries(users).map(([k, v]: [string, any]) => ({...v, id: k}));
-                     setConnectedUsers(list);
-                 }
-            });
-        }
-    }, [isLiveMode, currentRoomId]); // Check specifically on mount or mode change
-
-    const handleInitFirebase = () => {
-        if (!firebaseConfig.trim()) {
-            showToast("Please provide Firebase JSON!", 'error');
+        // 0. RESET PASSWORD FLOW
+        if (resetTokenParam) {
+            setResetToken(resetTokenParam);
+            setAuthModalState('RESET_PASSWORD');
+            setAuthModalOpen(true);
             return;
         }
-        try {
-             // Use Function constructor to parse loose JSON/JS Objects
-             const fbConfig = new Function("return " + firebaseConfig)();
-             
-             if (initFirebase(fbConfig)) {
-                 setIsFirebaseReady(true);
-                 if (rememberMe) {
-                    localStorage.setItem('fb_config_str', firebaseConfig);
+        const inviteToken = params.get('invite_token');
+
+        // 1. INVITE FLOW (New Priority)
+        if (inviteToken) {
+            // Check if we are already logged in?
+            const token = localStorage.getItem('auth_token');
+            // If we have a token, we might still want to validate the invite to get the room ID
+            // but we shouldn't show the Login modal if the email matches.
+            
+            setIncomingInviteToken(inviteToken);
+            fetch(`${API_URL}/validate-invite?token=${inviteToken}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.valid) {
+                         // Pre-set context data 
+                        if (data.roomId) {
+                            setRoomId(data.roomId);
+                            sessionStorage.setItem('room_id_session', data.roomId);
+                        }
+                        if (data.configStr) {
+                             // Legacy configStr handling removed
+                        }
+                        if (data.permissions) {
+
+                             setReadOnly(data.permissions === 'r');
+                        }
+                        setIsClientMode(true); // Default to True (Guest) until verified
+
+                        // If already authenticated, skip modal
+                        if (token) {
+                            try {
+                                const payload = JSON.parse(atob(token.split('.')[1]));
+                                if (payload.email === data.email) {
+                                    showToast("Invitation Accepted (Logged In)", "success");
+                                    // Verify Role since we are accepting invitation 
+                                    // (Actual verification happens in handleConnect, but we can preset mode here if we want)
+                                    // But handleConnect will run after this returns.
+                                    return;
+                                }
+                            } catch(e) {}
+                        }
+
+                        setAuthModalEmail(data.email);
+                        setAuthModalState(data.isRegistered ? 'LOGIN' : 'REGISTER');
+                        setAuthModalOpen(true); 
+                    } else {
+                        showToast(data.error || "Invalid Invite Link", "error");
+                    }
+                })
+                .catch(() => showToast("Failed to validate invite", "error"));
+            return; // Stop processing other params if processing invite
+        }
+
+        // 2. Token Handling (Legacy/Direct)
+        if (tokenParam) {
+            localStorage.setItem('auth_token', tokenParam);
+            setAuthToken(tokenParam);
+            // Clean URL? Maybe later to hide token
+        }
+
+        // 2. Client Initialization
+        if (roomParam && !isConnected) {
+            let targetRoomId = roomParam;
+
+            // Decode Room
+            try {
+                const decodedRoom = atob(roomParam);
+                if (/^[\x20-\x7E]+$/.test(decodedRoom)) targetRoomId = decodedRoom;
+            } catch(e) { targetRoomId = roomParam; }
+
+            setIsClientMode(true); 
+            setRoomId(targetRoomId);
+
+            if (permParam === 'r') setReadOnly(true);
+        }
+    }, [isConnected]); 
+
+
+    // Auto-Connect Effect
+    useEffect(() => {
+        // Debounce slightly to ensure firebase/room state is settled
+        const timer = setTimeout(() => {
+            if(roomId && !isConnected && !isConnecting) {
+                 const storedSessionRoom = sessionStorage.getItem('room_id_session');
+                 const shouldAutoConnect = isClientMode || (storedSessionRoom && storedSessionRoom === roomId);
+
+                 if (shouldAutoConnect) {
+                     const pref = sessionStorage.getItem('preferred_mode');
+                     console.log(`Auto-connecting to ${roomId}. Target: ${pref || 'live'}`);
+                     
+                     // If preference is explicitly local, do NOT auto-connect to live
+                     // Just restore session in Local Mode
+                     if (pref === 'local') {
+                         handleConnect(false);
+                     } else {
+                         // Default to live if no pref or pref is 'live'
+                         handleConnect(true);
+                     }
                  } else {
-                    localStorage.removeItem('fb_config_str');
+                     setIsRestoringSession(false);
                  }
-                 setConfigError(null);
-                 showToast("Firebase Initialized. Enter Room ID.", 'success');
-             } else {
-                 showToast("Firebase failed to initialize.", 'error');
+            } else if (!roomId) {
+                setIsRestoringSession(false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [roomId, isClientMode, isConnected, isConnecting]);
+
+
+
+
+    // Connection Toast Feedback Logic (Separated from realtime callback)
+    useEffect(() => {
+        if (isConnected) {
+             if (!hasShownErrorToast.current) {
+                 if (isLiveMode) {
+                     showToast("Connected to Live Room!", 'success');
+                 } else {
+                     showToast("Restored Session (Local Mode)", 'info');
+                 }
+                 hasShownErrorToast.current = true;
              }
+        }
+    }, [isConnected, isLiveMode]);
+
+    const toggleInvisible = () => {
+        toggleUserVisibility();
+        // Feedback
+        if (!isUserVisible) showToast("You are now visible", "success");
+        else showToast("You are now invisible", "info");
+    };
+
+    const handleInviteUser = async () => {
+        if (!inviteEmail || !inviteEmail.includes('@')) {
+            showToast("Invalid Email", "error");
+            return;
+        }
+        setIsInviting(true);
+        try {
+            await fetch(`${API_URL}/invite`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: inviteEmail,
+                    roomId,
+                    configStr: '', // Legacy/Removed
+                    origin: window.location.origin + window.location.pathname,
+                    permissions: linkAllowEdit ? 'rw' : 'r',
+                    hostName: config.userProfile.name,
+                    projectName: 'Visual DB Project' // We could add a project name field
+                })
+            });
+            showToast("Invitation Sent!", "success");
+            setInviteEmail('');
         } catch (e) {
             console.error(e);
-            showToast("Invalid JSON Config", 'error');
+            showToast("Failed to send invite", "error");
+        } finally {
+            setIsInviting(false);
         }
     };
 
-    const handleConnect = () => {
-        if (!roomId) {
-            showToast("Room ID is missing", "error");
+    const handleLoginRequest = async () => {
+        if (!loginEmail || !loginEmail.includes('@')) {
+            showToast("Enter a valid email", "error");
             return;
         }
+        setIsLoggingIn(true);
+        try {
+            await fetch(`${API_URL}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: loginEmail,
+                    origin: window.location.origin + window.location.pathname
+                })
+            });
+            showToast("Check your email for the login link", "info");
+        } catch (e) {
+            showToast("Login request failed. Are you invited?", "error");
+        } finally {
+            setIsLoggingIn(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        await handleDisconnect();
+        logout();
+    };
+
+    // ... (rest of the file hooks)
+
+    const syncProjectWithBackend = async (targetRoomId: string, role?: string) => {
+        if (!authToken) return;
+        try {
+            let email = '';
+            try { 
+                const part = authToken.split('.')[1];
+                if(part) email = JSON.parse(atob(part)).email; 
+            } catch(e){}
+            
+            if(!email) return;
+
+            // Best effort save to backend
+            await fetch(`${API_URL}/save-project`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email,
+                    project: {
+                        id: targetRoomId,
+                        name: `Project ${targetRoomId.substring(0,6)}`,
+                        configStr: '', // Legacy
+                        author: config.userProfile.name,
+                        url: window.location.origin + window.location.pathname,
+                        role: role || (isClientMode ? 'guest' : 'host') // Explicitly send role
+                    }
+                })
+            });
+        } catch(e) { console.warn("Backend Sync Failed", e); }
+    };
+
+
+    // handleInitFirebase removed
+
+
+    const handleConnect = async (forceLiveMode: boolean = true, tokenOverride?: string) => {
+        if (!roomId) {
+            showToast("Room ID is missing", "error");
+            setIsRestoringSession(false);
+            return;
+        }
+
+        // 1. AUTH CHECK
+        const currentToken = tokenOverride || authToken || localStorage.getItem('auth_token');
+        if (!currentToken && forceLiveMode) {
+             showToast("Authentication Required for Live Sync", "warning");
+             setShowLoginUI(true);
+             setIsConnecting(false);
+             setIsRestoringSession(false);
+             return;
+        }
+
+        if (isConnecting) return; 
+
+        // If already connected, just ensure the mode matches if connected via other means
+        // This prevents double-connection logic or ghost toasts.
+        // BUT if we are restoring a session, we want to verify the connection.
+        if (isConnected && !isRestoringSession) {
+            console.log("Already connected. Updating mode only.");
+            if (forceLiveMode !== isLiveMode) {
+                toggleLiveMode(forceLiveMode);
+            }
+            return;
+        }
+
+        // Force boolean
+        const isLive = forceLiveMode === true;
         
+        // FAST RESTORE FOR LOCAL MODE
+        // If we are restoring a session and target mode is LOCAL, we skip network checks
+        if (!isLive && isRestoringSession) {
+             console.log("Restoring Local Session (Fast Path)");
+             setCurrentRoomId(roomId); 
+             setLiveMode(false);
+             setIsConnected(true);
+             setIsRestoringSession(false);
+             setIsConnecting(false);
+             return;
+        }
+
+        // Transition from RESTORING -> CONNECTING immediately
+        // This stops "Restoring..." UI and shows "Connecting..." UI (spinner)
+        setIsRestoringSession(false);
         setIsConnecting(true);
+        console.log(`Checking connection... Target Mode: ${isLive ? 'LIVE' : 'LOCAL'}`);
 
         // Identity Management for Host vs Client (Guest)
-        // If Client Mode, use sessionStorage to avoid collision with Host on same browser
         let userId = isClientMode 
             ? sessionStorage.getItem('client_uid') 
             : localStorage.getItem('my_user_id');
 
-        if (!userId) {
+        let authEmail = null;
+        const effectiveToken = tokenOverride || authToken || localStorage.getItem('auth_token');
+
+        try {
+            if (effectiveToken) {
+                 const p = JSON.parse(atob(effectiveToken.split('.')[1]));
+                 authEmail = p.email;
+            }
+        } catch(e) {}
+        
+        if (authEmail) {
+            userId = authEmail;
+            // Sync Auth ID to storage to ensure UI matching
+            if(userId){
+            localStorage.setItem('my_user_id', userId);
+            if (isClientMode) sessionStorage.setItem('client_uid', userId)};
+        } else if (!userId) {
             userId = (isClientMode ? 'guest_' : 'user_') + Math.random().toString(36).substr(2, 9);
-            if (isClientMode) {
-                sessionStorage.setItem('client_uid', userId);
+            if (isClientMode) sessionStorage.setItem('client_uid', userId);
+            else localStorage.setItem('my_user_id', userId);
+        }
+
+        // Determine Identity & Role
+        let role: 'host' | 'guest' = isClientMode ? 'guest' : 'host'; // Default
+        let displayName = config.userProfile.name;
+
+        // Verify Access & Role from Backend
+        if (effectiveToken && roomId) {
+            try {
+                // We should ideally await this, but handleConnect is already async.
+                const res = await fetch(`${API_URL}/verify-access`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: effectiveToken, roomId })
+                });
+                const verification = await res.json();
+                if (verification.allowed) {
+                    role = verification.role || role; // 'host' or 'guest' from DB
+                    // Correctly update UI Mode
+                    if (role === 'host') {
+                         setIsClientMode(false); 
+                    } else {
+                         setIsClientMode(true);
+                    }
+                    console.log(`Verified Access. Role: ${role}. Client Mode: ${role !== 'host'}`);
+                }
+            } catch(e) { console.warn("Role verification failed", e); }
+        }
+        
+        // 404 Check / Create Project
+        try {
+            // Check Room Existence (Just peek)
+            await api.get(`/graph/${roomId}`); 
+        } catch (fetchErr: any) {
+            if (fetchErr.message && (fetchErr.message.includes('404') || fetchErr.message.includes('Project not found') || fetchErr.message.includes('Cannot GET'))) {
+                console.log("Room not found, creating new room:", roomId);
+                try {
+                    const initRes = await api.post('/graph/init', { 
+                        roomId, 
+                        name: `Project ${roomId}`,
+                        config: config
+                    });
+                    if (initRes.success) {
+                        showToast("New Project Room Created!", "success");
+                    }
+                } catch (createErr: any) {
+                    setIsConnecting(false);
+                    showToast("Failed to initialize room", "error");
+                    return;
+                }
             } else {
-                localStorage.setItem('my_user_id', userId);
+                // Network Error? Allow GraphContext to retry.
+                console.warn("Pre-check failed, relying on context retry:", fetchErr);
             }
         }
 
         const userObj = {
-            id: userId,
-            name: (config.userProfile.name || (isClientMode ? 'Guest' : 'Host')) + (isClientMode ? ' (Guest)' : ' (Host)'),
+            id: userId!, 
+            name: displayName ,
             color: config.userProfile.color,
-            lastActive: Date.now()
+            lastActive: Date.now(),
+            role: role,
+            visible: isUserVisible
         };
 
-        try {
-            connectToRoom(roomId, userObj, (data) => {
-                console.log("Remote Data Received");
-                 if (data) {
-                     const nList = data.nodes ? (Array.isArray(data.nodes) ? data.nodes : Object.values(data.nodes)) : [];
-                     const eList = data.edges ? (Array.isArray(data.edges) ? data.edges : Object.values(data.edges)) : [];
-                     const cList = data.comments ? (Array.isArray(data.comments) ? data.comments : Object.values(data.comments)) : [];
-                     
-                     // Update Context
-                     setGraphData(nList, eList, cList);
-                 } else {
-                     // Empty Room - If Host, assume we initial seeding
-                     if (!isClientMode && (nodes.length > 0 || edges.length > 0)) {
-                         console.log("Seeding empty room with local data...");
-                         uploadFullGraph(nodes, edges, comments);
-                         showToast("Room initialized with local data", 'info');
-                     }
-                 }
-            });
-            
-            subscribeToUsers(roomId, (users) => {
-                 if (users) {
-                     const list = Object.entries(users).map(([k, v]: [string, any]) => ({...v, id: k}));
-                     setConnectedUsers(list);
-                 }
-            });
+        // Update Context to trigger Socket Connection & Data Loading
+        setCurrentRoomId(roomId);
+        setLiveMode(isLive);
 
-            setIsConnected(true);
-            setLiveMode(true); 
-            setCurrentRoomId(roomId); 
-            showToast("Connected to Live Room!", 'success');
-        } catch (e) {
-            console.error(e);
-            showToast("Connection Failed", 'error');
-        } finally {
-            setIsConnecting(false);
+        // Mark as Connected (Data will load via Context)
+        setIsConnected(true); 
+        sessionStorage.setItem('room_id_session', roomId);
+        sessionStorage.setItem('preferred_mode', isLive ? 'live' : 'local');
+        setIsRestoringSession(false); 
+
+        // Sync with Backend (Fire and Forget)
+        syncProjectWithBackend(roomId, role);
+
+        // Clean Invite Token from URL if present
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('invite_token')) {
+            url.searchParams.delete('invite_token');
+            window.history.replaceState({}, document.title, url.toString());
+            setIncomingInviteToken(''); 
         }
+    
+        setIsConnecting(false);
     };
+
+
 
     // Need to handle graph updates from inside the callback.
     // The previous edit didn't include setGraphData in destructuring.
     // I will fix destructuring in next tool call.
 
     const handleDisconnect = async () => {
-        disconnectRoom(); // Firebase disconnect
+        // Prevent auto-reconnect loops to ensure we stay disconnected
+        sessionStorage.removeItem('room_id_session');
+        
+        // Reset toast guard so we get feedback on next connect
+        hasShownErrorToast.current = false;
+        
+        // 2. UI State Reset
+        setIsClientMode(false); // Force exit client/auto mode
         setIsConnected(false);
         setLiveMode(false); 
+        setRoomId(''); // Crucial: Clear Room ID state
+        setLastSyncTime(null);
         setCurrentRoomId(null);
+        // Note: We do NOT clear authToken here anymore, so user stays logged in
         
-        // Strict Wipe: Clear all local storage & DB data for EVERYONE (Host & Client)
-        // User Requirement: "remove all db data from browser that app saved for this db connection"
-        localStorage.removeItem('fb_config_str'); 
-        // We keep 'my_user_id' for identity continuity unless strictly client mode reqs? 
-        // User said "logout user from current db connection", usually ID persists, but local data wipes.
-        
-        // Wipe IndexedDB
-        await dbOp('nodes', 'readwrite', 'clear');
-        await dbOp('edges', 'readwrite', 'clear');
-        await dbOp('comments', 'readwrite', 'clear'); // Clear comments too!
-        refreshData(); 
-        setFirebaseConfig('');
-        setRememberMe(false);
+        // 3. Storage Cleanup
 
+        // Wipe IndexedDB ONLY if we were a Guest (Client Mode)
+
+        // If we were hosting (Local Mode synced to Live), we keep the data locally.
         if (isClientMode) {
-             localStorage.clear(); // Hard Wipe for Clients
+            await wipeDatabase();
+            
+            try { await refreshData(); } catch(e) {}
+
+             localStorage.clear();
+             // Clean Redirect to remove query params to prevent auto-client-mode re-entry
              window.location.href = window.location.origin + window.location.pathname;
         } else {
-             // Host Logic
-             setRoomId('');
-             setIsFirebaseReady(false); // Force re-entry of config if desired, or at least disconnect visual
-             showToast("Disconnected & Local Data Cleared", "info");
+             showToast("Disconnected. Local data preserved.", "info");
         }
+    };
+    
+    // Wrapper for Button Click
+    const onDisconnectClick = () => {
+        setIsDisconnectModalOpen(true);
     };
 
     const handleDeleteDB = () => {
@@ -270,138 +557,310 @@ export const DataTab: React.FC = () => {
     };
 
     const confirmDeleteDB = async () => {
+         setIsDeleteConfirmOpen(false);
+
+         // If connected to a room, try to delete it remotely
+         if (isConnected && roomId && !isClientMode) {
+             try {
+                 await api.delete(`/graph/${roomId}`);
+                 showToast("Remote Project Deleted", "success");
+             } catch (e: any) {
+                 console.error("Delete Failed", e);
+                 // Proceed to local wipe anyway
+             }
+         }
+
          // Wipe Local & Disconnect
-             await dbOp('nodes', 'readwrite', 'clear');
-             await dbOp('edges', 'readwrite', 'clear');
-             await dbOp('comments', 'readwrite', 'clear');
+             await wipeDatabase();
              refreshData();
              handleDisconnect();
-             showToast("Database & Local Data Wiped", "error");
+             showToast("Database & Local Data Wiped", "info");
     };
 
-    const handlePushToDB = () => {
-        if (!isLiveMode || !currentRoomId) return;
-        if (confirm("Overwrite REMOTE database with LOCAL data? This will update the graph for all users.")) {
-            uploadFullGraph(nodes, edges, comments);
-            showToast("Local data pushed to Remote DB", "success");
+    const handleCopyMagicLink = () => {
+        if (!roomId) {
+            showToast("Init Room ID first", "error");
+            return;
         }
+        // Encrypt Room ID as well
+        const encodedRoomId = btoa(roomId);
+        const permParam = linkAllowEdit ? 'rw' : 'r';
+        const url = `${window.location.origin}${window.location.pathname}?room=${encodedRoomId}&p=${permParam}`;
+        
+        navigator.clipboard.writeText(url);
+        showToast(`Magic Link (${linkAllowEdit ? 'Edit' : 'Read-Only'}) Copied!`, "success");
     };
 
-    const handlePullFromDB = async () => {
-        if (!isLiveMode || !currentRoomId) return;
-        if (confirm("Overwrite LOCAL data with REMOTE database? Unsaved local changes will be lost.")) {
-            try {
-                const data = await fetchRoomData(currentRoomId);
-                if (data) {
-                     const nList = data.nodes ? (Array.isArray(data.nodes) ? data.nodes : Object.values(data.nodes)) : [];
-                     const eList = data.edges ? (Array.isArray(data.edges) ? data.edges : Object.values(data.edges)) : [];
-                     const cList = data.comments ? (Array.isArray(data.comments) ? data.comments : Object.values(data.comments)) : [];
-                     
-                     // Helper to update IDB
-                     await dbOp('nodes', 'readwrite', 'clear');
-                     await dbOp('edges', 'readwrite', 'clear');
-                     await dbOp('comments', 'readwrite', 'clear');
-                     
-                     for(const n of nList) await dbOp('nodes', 'readwrite', 'put', n);
-                     for(const e of eList) await dbOp('edges', 'readwrite', 'put', e);
-                     for(const c of cList) await dbOp('comments', 'readwrite', 'put', c);
-                     
-                     setGraphData(nList, eList, cList);
-                     showToast("Local data restored from Remote DB", "success");
-                } else {
-                    showToast("Remote DB is empty", "info");
-                }
-            } catch (e) {
-                console.error(e);
-                showToast("Failed to fetch remote data", "error");
-            }
+    const toggleLiveMode = async (targetMode: boolean) => {
+        if (!isConnected) {
+             showToast("Connect to a room first", "error");
+             return;
+        }
+
+        if (isConnecting) return;
+
+        // Allow force-reset if clicking same mode
+        // But ALLOW retry if we are 'Live' but failed status
+        if (targetMode === isLiveMode && connectionStatus !== 'failed') {
+             console.log("Already in target mode", targetMode);
+             return;
+        }
+        
+        // Persist preference
+        sessionStorage.setItem('preferred_mode', targetMode ? 'live' : 'local');
+
+        if (targetMode) {
+             // Switching TO Live Mode
+             setIsConnecting(true);
+             
+             // Only show global blocking loader if this is the FIRST connect or a different kind of transition
+             // If we are just retrying, we might want to stay non-blocking?
+             // But actually, for collision check we need to wait.
+             // However, if we fail, we want user to be able to click Local.
+             setTransitioningToLive(true);
+             
+             // FORCE SOCKET RE-INIT if we are actively retrying a failed connection
+             if (isLiveMode && connectionStatus === 'failed') {
+                 // Trigger refresh logic which handles socket re-attempts in GraphContext
+                 // We don't have direct socket access here but we can use our 'refreshData'
+                 // However, 'refreshData' does a GET request first. 
+                 // So actually just proceeding to conflict check (api.get) is the right path.
+                 // If api.get succeeds, we assume network is up and we proceed.
+             }
+
+             try {
+                 // Fetch data manually to check for conflicts (Cache-busted)
+                 const data = await api.get(`/graph/${roomId}?t=${Date.now()}`);
+                 
+                 const rNodes = data?.nodes || [];
+                 const rEdges = data?.edges || [];
+                 const rComments = data?.comments || [];
+                 
+                 // Construct minimal config from remote project settings
+                 const rConfig = data.project?.config || {};
+                 if (data.project?.backgroundColor) rConfig.backgroundColor = data.project.backgroundColor;
+
+                 // Normalization for comparison: Sort by ID and remove metadata + normalize nulls
+                 const clean = (arr: any[]) => arr.map(item => {
+                     const { id, x, y, title, description, color, props, source, target } = item;
+                     return {
+                         id, 
+                         x, 
+                         y, 
+                         // Normalize null/undefined to consistent undefined so JSON.stringify drops them
+                         title: title || undefined,
+                         description: description || undefined,
+                         color: color || undefined,
+                         props, 
+                         source, 
+                         target
+                     };
+                 }).sort((a, b) => a.id.localeCompare(b.id));
+
+                 const localNodesClean = clean(nodes);
+                 const remoteNodesClean = clean(rNodes);
+                 
+                 // Config comparison
+                 const cleanLocalConfig = { backgroundColor: config.backgroundColor };
+                 const cleanRemoteConfig = { backgroundColor: rConfig.backgroundColor };
+                 
+                 const hasConfigDiff = JSON.stringify(cleanLocalConfig) !== JSON.stringify(cleanRemoteConfig);
+                 const hasNodeDiff = JSON.stringify(localNodesClean) !== JSON.stringify(remoteNodesClean);
+                 const hasEdgeDiff = JSON.stringify(clean(edges)) !== JSON.stringify(clean(rEdges));
+
+                 const isRemoteEmpty = rNodes.length === 0 && rEdges.length === 0;
+                 
+                 // Explicit count check to catch simple deletions/additions even if content looks similar (edge case)
+                 const countDiff = (nodes.length !== rNodes.length) || (edges.length !== rEdges.length);
+
+                 // Conflict Logic:
+                 const hasConflict = !isRemoteEmpty && (countDiff || hasNodeDiff || hasEdgeDiff || hasConfigDiff);
+                 
+                 console.log("[Sync Check]", { 
+                     hasConflict, isRemoteEmpty, 
+                     countDiff, hasNodeDiff, hasEdgeDiff, hasConfigDiff,
+                     localCount: nodes.length, remoteCount: rNodes.length
+                 });
+
+                 if (hasConflict) {
+                     setPendingRemoteData({ nodes: rNodes, edges: rEdges, comments: rComments, config: rConfig });
+                     setIsSyncModalOpen(true);
+                     // Stop here. Modal handles the rest.
+                     setIsConnecting(false); 
+                     return; 
+                 } else {
+                     // No conflict, safe to sync
+                     // Push local config if we are "winning" or it's empty
+                     await uploadFullGraphToBackend(roomId, nodes, edges, comments, true, config);
+                     showToast("Live Sync Enabled", "success");
+                     setLiveMode(true);
+                 }
+             } catch(e: any) {
+                 console.error("Live Check Error", e);
+                 const msg = e.message || String(e);
+
+                 // Fix: Don't enter live mode if Authorization is the issue
+                 if (msg.includes('Unauthorized') || msg.includes('Invalid Token') || msg.includes('User not found') || msg.includes('jwt expired')) {
+                      showToast("Authentication Failed. Please log in again.", "error");
+                      // We could trigger logout here too, or let api failure do it?
+                      // But better to stop flow here.
+                      logout(); 
+                      setIsConnecting(false);
+                      setTransitioningToLive(false);
+                      return;
+                 }
+
+                 // Fallback: Enable Live Mode even if check failed
+                 // But keep status as failed if socket not connected
+                 setLiveMode(true);
+                 
+                 // If api failed, we assume connection failed. 
+                 // We don't need to push data blindly if API is down.
+                 
+                 if (nodes.length > 0 || edges.length > 0) {
+                      // Attempt background push if possible? 
+                      // or just warn
+                      showToast("Connection Failed. Retrying in background...", "warning");
+                 } else {
+                     showToast("Live Sync Active (Empty)", "info");
+                 }
+             } finally {
+                 // ONLY clear connecting if we didn't return early for modal
+                 if (!isSyncModalOpen) {
+                     setIsConnecting(false);
+                     setTransitioningToLive(false);
+                 }
+             }
+        } else {
+             // Switching TO Local Mode
+             console.log("Switching to Local Mode");
+             setIsConnecting(false); // Force stop connecting state
+             setTransitioningToLive(false); // Remove global loader if any
+             setLiveMode(false);
+             showToast("Switched to LOCAL Mode", "info");
         }
     };
     
-    const handleCopyMagicLink = () => {
-        if (!firebaseConfig || !roomId) {
-            showToast("Init Firebase & Room ID first", "error");
-            return;
-        }
-        // Do NOT remove spaces from JSON to ensure valid syntax for unquoted keys if present
-        const cleanConfig = firebaseConfig.trim();
-        const encodedConfig = btoa(cleanConfig);
-        // Encrypt Room ID as well
-        const encodedRoomId = btoa(roomId);
-        const url = `${window.location.origin}${window.location.pathname}?room=${encodedRoomId}&config=${encodedConfig}`;
+    const resolveSync = async (action: 'push_local' | 'pull_remote' | 'merge', mergedData?: { nodes: NodeData[], edges: EdgeData[], comments: any[] }) => {
+        setIsSyncModalOpen(false);
+        setIsConnecting(true);
+        setTransitioningToLive(true);
         
-        navigator.clipboard.writeText(url);
-        showToast("Magic Link Copied to Clipboard!", "success");
-    };
+        try {
+            if (action === 'push_local') {
+                await uploadFullGraphToBackend(roomId, nodes, edges, comments, true, config);
+                showToast("Local data pushed to Live Room", "success");
+            } else if (action === 'merge' && mergedData) {
+                 const { nodes: n, edges: e, comments: c } = mergedData;
+                 
+                 // 1. Update In-Memory State & Trigger IDB Sync via GraphContext
+                 // We do NOT manually wipe/write here because setGraphData handles it cleanly.
+                 setGraphData(n, e, c);
+                 
+                 // 2. Push to Backend (Source of Truth)
+                 // Critical: Ensure backend is updated BEFORE we go live to prevent stale data pull
+                 await uploadFullGraphToBackend(roomId, n, e, c, true, config);
+                 
+                 showToast("Merged data synced successfully", "success");
 
-    const toggleLiveMode = () => {
-        if (!isConnected) {
-            showToast("Connect to a room first", "error");
-            return;
+            } else {
+                if (pendingRemoteData) {
+                    const { nodes: n, edges: e, comments: c, config: cfg } = pendingRemoteData;
+                    
+                    // Update State & Local DB
+                    setGraphData(n, e, c);
+                    
+                    // Update Config
+                    if (cfg && cfg.backgroundColor) {
+                        updateProjectBackground(cfg.backgroundColor);
+                    }
+                    if (cfg) {
+                         // Merge other config if specific fields exist
+                         // ignoring local pref like theme/language
+                         updateConfig({ ...config, ...cfg, theme: config.theme, language: config.language });
+                    }
+
+                    showToast("Remote data loaded locally", "success");
+                }
+            }
+            setLiveMode(true);
+            setLastSyncTime(new Date());
+        } catch (e) {
+            showToast("Sync failed", "error");
+        } finally {
+            setIsConnecting(false);
+            setTransitioningToLive(false);
+            setPendingRemoteData(null);
         }
-        setLiveMode(!isLiveMode);
-        showToast(isLiveMode ? "Switched to Local View" : "Switched to Live View", "info");
     };
 
     const exportJSON = () => {
-        const data = { 
-            nodes, 
-            edges, 
-            comments,
-            meta: { graphName: 'dashboard' },
-            exportedAt: new Date().toISOString() 
-        };
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `graph_backup_${new Date().toISOString().slice(0,10)}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        downloadJSON(nodes, edges, comments);
     };
 
-    const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        // PERMISSION CHECK using Backend Role
+        // We rely on isClientMode which is now updated by backend role verification
+        if (isClientMode) { // If still ClientMode (Guest), deny import
+            showToast("You do not have permission to import data.", "error");
+            return;
+        }
+
+        // LIVE MODE WARNING
+        if (isLiveMode) {
+             if (!confirm("⚠️ CAUTION: You are importing data while in LIVE Sync Mode.\n\nThis will OVERWRITE the REMOTE database for everyone.\n\nDo you want to continue?")) {
+                 // Reset input so they can try again if they change their mind
+                 event.target.value = '';
+                 return;
+             }
+        } else {
+             if (nodes.length > 0 && !confirm("This will overwrite your current graph data. Continue?")) {
+                 event.target.value = '';
+                 return;
+             }
+        }
+        
         const file = event.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-             try {
-                 const data = JSON.parse(e.target?.result as string);
-                 if (data.nodes && Array.isArray(data.nodes) && data.edges && Array.isArray(data.edges)) {
-                     if(confirm("This will overwrite your current graph. Continue?")) {
-                         // Clear DB
-                         await dbOp('nodes', 'readwrite', 'clear');
-                         await dbOp('edges', 'readwrite', 'clear');
-                         await dbOp('comments', 'readwrite', 'clear');
-                         
-                         // Insert Nodes
-                         for (const n of data.nodes) {
-                             await dbOp('nodes', 'readwrite', 'put', n);
-                         }
-                         // Insert Edges
-                         for (const ed of data.edges) {
-                             await dbOp('edges', 'readwrite', 'put', ed);
-                         }
-                         // Insert Comments
-                         if (data.comments && Array.isArray(data.comments)) {
-                             for (const c of data.comments) {
-                                 await dbOp('comments', 'readwrite', 'put', c);
-                             }
-                         }
-                         
-                         await refreshData();
-                         alert("Graph restored successfully!");
-                     }
-                 } else {
-                     alert("Invalid File Format: Missing nodes or edges array.");
-                 }
-             } catch (e) {
-                 console.error(e);
-                 alert("Invalid JSON File");
-             }
-        };
-        reader.readAsText(file);
+
+        // Pass a no-op to processImportFile so it doesn't trigger a premature refresh from server
+        // which would overwrite our just-imported local data before we can sync it up.
+        const result = await processImportFile(file, async () => {});
+        
+        if (result.success) {
+            // Auto-Push if Live Mode
+            if (isLiveMode) {
+                try {
+                    // Read fresh data from DB because 'nodes' in closure is stale
+                    const n = await dbOp('nodes', 'readonly', 'getAll') as any[];
+                    const e = await dbOp('edges', 'readonly', 'getAll') as any[];
+                    const c = await dbOp('comments', 'readonly', 'getAll') as any[];
+                    
+                    if (n.length === 0 && e.length === 0) {
+                        console.warn("Import warning: IDB returned empty arrays immediately after import.");
+                        // Retry once if needed? Or maybe the file was empty.
+                    }
+
+                    await uploadFullGraphToBackend(roomId, n, e, c, true);
+                    
+                    // NOW refresh from server (which should contain the data we just pushed)
+                    await refreshData(true);
+                    
+                    showToast("Imported & Synced to Live Room", "success");
+                } catch(err) {
+                    console.error("Import Sync Failed", err);
+                    showToast("Imported locally but failed to sync remote", "warning");
+                    // Ensure we at least see the local data
+                    await refreshData(false);
+                }
+            } else {
+                // Local Mode: just refresh from the local DB we just wrote to
+                await refreshData(true);
+                alert(result.message);
+            }
+        } else {
+            alert(result.message);
+        }
     };
 
     return (
@@ -411,209 +870,159 @@ export const DataTab: React.FC = () => {
             <div className="p-4 bg-white rounded-lg border border-indigo-200 shadow-sm space-y-3 dark:bg-indigo-900/10 dark:border-indigo-800">
                  <div className="text-xs font-bold text-gray-700 flex justify-between items-center dark:text-indigo-200">
                      <span>{t('data.live')}</span>
-                     <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : (isFirebaseReady ? 'bg-yellow-400' : 'bg-gray-300')}`} title={isConnected ? "Connected" : "Disconnected"}></span>
+                     <span 
+                         className={`w-2 h-2 rounded-full ${
+                             isConnected || (isLiveMode && connectionStatus === 'connected') 
+                                 ? (isLiveMode 
+                                     ? (connectionStatus === 'failed' ? 'bg-red-500' : 'bg-green-500') 
+                                     : 'bg-orange-400') 
+                                 : 'bg-gray-300'
+                         }`} 
+                         title={isConnected ? (isLiveMode ? (connectionStatus === 'failed' ? "Live Sync Failed" : "Live Sync Active") : "Local Mode (Paused)") : "Disconnected"}
+                     ></span>
                  </div>
 
-                 {!isFirebaseReady ? (
-                     <div id="fb-config-section">
-                        {configError && (
-                             <div className="mb-2 p-2 bg-red-50 text-red-600 text-[10px] rounded border border-red-100 font-medium dark:bg-red-900/30 dark:text-red-300 dark:border-red-900">
-                                 {configError}
-                             </div>
-                        )}
-                        {!isClientMode ? (
-                            <>
-                                <textarea 
-                                    value={firebaseConfig}
-                                    onChange={(e) => setFirebaseConfig(e.target.value)}
-                                    rows={3} 
-                                    placeholder={t('data.paste')} 
-                                    className="w-full text-[10px] p-2 border border-gray-200 rounded mb-2 font-mono dark:bg-slate-900 dark:border-slate-600 dark:text-gray-200"
-                                ></textarea>
-                                
-                                <div className="flex items-center mb-2">
-                                    <input 
-                                        id="fb-remember" 
-                                        type="checkbox" 
-                                        checked={rememberMe}
-                                        onChange={(e) => setRememberMe(e.target.checked)}
-                                        className="w-3 h-3 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 dark:bg-slate-700 dark:border-slate-600" 
-                                    />
-                                    <label htmlFor="fb-remember" className="ml-2 text-xs text-gray-600 dark:text-gray-400">{t('data.remember')}</label>
-                                </div>
-
-                                <button onClick={handleInitFirebase} className="w-full py-1.5 text-xs bg-gray-900 text-white rounded font-medium hover:bg-gray-800 transition dark:bg-slate-700 dark:hover:bg-slate-600">{t('data.set')}</button>
-                            </>
-                        ) : (
-                             <div className="text-xs text-gray-500 text-center py-2 animate-pulse dark:text-gray-400">Initializing Client Mode...</div>
-                        )}
-                     </div>
-                 ) : (
-                     <div id="fb-room-section">
-                        <div className="flex justify-between items-end mb-1">
-                             <label className="block text-[10px] text-gray-500 dark:text-gray-400">
-                                 {isClientMode && isConnected ? "Session Active" : t('data.room')}
-                             </label>
-                             <div className="flex gap-2">
-                                {!isClientMode && (
-                                    <button onClick={handleDeleteDB} className="text-[9px] text-red-800 hover:text-red-900 transition mb-0.5 font-bold underline bg-red-100 px-1 rounded dark:bg-red-900/50 dark:text-red-300 dark:hover:text-red-200">{t('data.deleteDB')}</button>
-                                )}
-                                <button onClick={handleDisconnect} className="text-[9px] text-red-500 hover:text-red-700 transition mb-0.5 font-bold underline dark:text-red-400 dark:hover:text-red-300">{t('data.disconnect')}</button>
-                             </div>
-                        </div>
-                        {(!isClientMode || !isConnected) && (
-                            <input 
-                                value={isClientMode ? (isConnected ? "Secure Connected Room" : "Pending Connection...") : roomId}
-                                onChange={(e) => !isClientMode && setRoomId(e.target.value)}
-                                type={isClientMode ? "password" : "text"} 
-                                placeholder="Enter Room Name" 
-                                className="w-full text-xs p-2 border border-gray-200 rounded mb-2 font-bold text-indigo-700 disabled:bg-gray-50 dark:bg-slate-900 dark:border-slate-600 dark:text-indigo-300 dark:disabled:bg-slate-500"
-                                disabled={isConnected || isClientMode}
+                     <>
+                        <RoomConnectionSection
+                            t={t}
+                            isClientMode={isClientMode}
+                            isConnected={isConnected}
+                            isRestoringSession={isRestoringSession}
+                            isLiveMode={isLiveMode}
+                            roomId={roomId}
+                            setRoomId={setRoomId}
+                            handleDeleteDB={handleDeleteDB}
+                            handleDisconnect={onDisconnectClick}
+                            showLoginUI={showLoginUI}
+                            loginEmail={loginEmail}
+                            setLoginEmail={setLoginEmail}
+                            handleLoginRequest={handleLoginRequest}
+                            isLoggingIn={isLoggingIn}
+                            isConnecting={isConnecting}
+                            connectionStatus={connectionStatus}
+                            handleConnect={handleConnect}
+                            toggleLiveMode={toggleLiveMode}
+                            lastSyncTime={lastSyncTime}
+                            isAuthenticated={!!isAuthenticated}
+                            onOpenAuthModal={() => setAuthModalOpen(true)}
                             />
-                        )}
-                        <div className="flex gap-2">
-                            {!isConnected ? (
-                                <button 
-                                    id="btn-connect" 
-                                    onClick={handleConnect} 
-                                    disabled={isConnecting}
-                                    className={`flex-1 py-1.5 text-xs text-white rounded font-medium transition shadow-sm ${isConnecting ? 'bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600'}`}
-                                >
-                                    {isConnecting ? "Connecting..." : (isClientMode ? "Join Room" : t('data.connect'))}
-                                </button>
-                            ) : (
-                                <button onClick={toggleLiveMode} className={`flex-1 py-1.5 text-xs text-white rounded font-medium shadow-sm transition flex items-center justify-center gap-2 ${isLiveMode ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-500 hover:bg-gray-600'}`}>
-                                    {isLiveMode ? <Radio size={12} className="animate-pulse"/> : <Unplug size={12}/>}
-                                    {isLiveMode ? "LIVE Mode" : "Local Mode"}
-                                </button>
-                            )}
-                            {!isClientMode && (
-                                <button onClick={handleCopyMagicLink} className="py-1 px-3 text-xs bg-emerald-50 text-emerald-600 border border-emerald-200 rounded hover:bg-emerald-100 transition dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-900/50" title="Copy Magic Link">
-                                    <LinkIcon size={14} />
-                                </button>
-                            )}
-                        </div>
+                            
+                        {!isClientMode && isConnected && <TeamInviteSection
+                            t={t}
+                            isClientMode={isClientMode}
+                            isConnected={isConnected}
+                            isRestoringSession={isRestoringSession}
+                            linkAllowEdit={linkAllowEdit}
+                            setLinkAllowEdit={setLinkAllowEdit}
+                            inviteEmail={inviteEmail}
+                            setInviteEmail={setInviteEmail}
+                            handleInviteUser={handleInviteUser}
+                            isInviting={isInviting}
+                            handleCopyMagicLink={handleCopyMagicLink}
+                        />}
+                        
 
-                         {/* Host Sync Controls */}
-                         {isConnected && !isClientMode && isLiveMode && (
-                            <div className="flex gap-2 pt-2 border-t border-indigo-50 dark:border-indigo-900/50">
-                                <button 
-                                    onClick={handlePullFromDB}
-                                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300"
-                                    title="Restore Local from DB"
-                                >
-                                    <DownloadCloud size={12} /> Restore from DB
-                                </button>
-                                <button 
-                                    onClick={handlePushToDB}
-                                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] bg-orange-50 text-orange-700 border border-orange-200 rounded hover:bg-orange-100 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-300"
-                                    title="Update DB from Local"
-                                >
-                                    <UploadCloud size={12} /> Push to DB
-                                </button>
-                            </div>
-                         )}
+                        <SyncConflictModal
+                            isOpen={isSyncModalOpen}
+                            onClose={() => { setIsSyncModalOpen(false); setPendingRemoteData(null); }}
+                            localData={{ nodes, edges, comments, config }}
+                            remoteData={pendingRemoteData || { nodes: [], edges: [], comments: [] }}
+                            onResolve={resolveSync}
+                        />
 
-                         {/* Connected Users List (Accordion) */}
-                        {isConnected && connectedUsers.length > 0 && (
-                            <div className="mt-3 pt-3 border-t border-indigo-100 dark:border-indigo-900">
-                                <button 
-                                    onClick={() => setIsUsersListOpen(!isUsersListOpen)}
-                                    className="w-full flex justify-between items-center text-[10px] uppercase font-bold text-gray-400 mb-2 hover:text-indigo-600 transition-colors dark:text-gray-500 dark:hover:text-indigo-400"
-                                >
-                                    <span>Active Users ({connectedUsers.length})</span>
-                                    {isUsersListOpen ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
-                                </button>
-                                
-                                {isUsersListOpen && (
-                                    <div className="space-y-1.5 animate-slide-in">
-                                        {connectedUsers.map(u => {
-                                            const myId = isClientMode ? sessionStorage.getItem('client_uid') : localStorage.getItem('my_user_id');
-                                            return (
-                                                <div key={u.id} className="flex items-center justify-between text-xs bg-gray-50 p-1.5 rounded border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: u.color || '#ccc' }}></div>
-                                                        <span className="font-medium text-gray-700 max-w-[100px] truncate dark:text-gray-300">{u.name || 'Anonymous'}</span>
-                                                        {u.id === myId && <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded dark:bg-green-900/30 dark:text-green-400">Me</span>}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                     </div>
-                 )}
+                        <ActiveUsersList
+                            t={t}
+                            isConnected={isConnected}
+                            connectedUsers={activeUsers}
+                            isClientMode={isClientMode}
+                            isUsersListOpen={isUsersListOpen}
+                            setIsUsersListOpen={setIsUsersListOpen}
+                            isLiveMode={isLiveMode}
+                            isInvisible={!isUserVisible}
+                            toggleInvisible={toggleInvisible}
+                            config={config}
+                        />
+                     </>
+
             </div>
 
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">{t('data.mgmt')}</h3>
             
-            <div className="grid grid-cols-1 gap-3">
-                 <button 
-                    onClick={() => !isLiveMode && setCSVModalOpen(true)} 
-                    disabled={isLiveMode}
-                    className={`w-full text-left p-4 text-xs font-medium rounded-lg transition flex items-center gap-3 border shadow-sm ${
-                        isLiveMode 
-                        ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed dark:bg-slate-800/50 dark:border-slate-800 dark:text-gray-600' 
-                        : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-50 dark:bg-slate-800 dark:border-slate-700 dark:text-indigo-400 dark:hover:bg-slate-700'
-                    }`}
-                >
-                     <FileSpreadsheet size={24} className={isLiveMode ? "text-gray-400 dark:text-gray-600" : "text-gray-600 dark:text-gray-400"} />
-                     <div>
-                         <div className="font-bold">{t('data.excel')}</div>
-                         <div className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-500">{isLiveMode ? "Disabled in Live Mode" : "Bulk edit in Excel"}</div>
-                     </div>
-                 </button>
-                 
-                 <button onClick={exportJSON} className="w-full text-left p-4 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition flex items-center gap-3 border border-indigo-200 bg-white shadow-sm dark:bg-slate-800 dark:border-slate-700 dark:text-indigo-400 dark:hover:bg-slate-700">
-                     <Database size={24} className="text-gray-600 dark:text-gray-400" />
-                     <div>
-                         <div className="font-bold">{t('data.export')}</div>
-                         <div className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-500">Save all data</div>
-                     </div>
-                 </button>
-                 
-                 <label className={`w-full text-left p-4 text-xs font-medium rounded-lg transition flex items-center gap-3 border shadow-sm ${
-                        isLiveMode 
-                        ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed dark:bg-slate-800/50 dark:border-slate-800 dark:text-gray-600' 
-                        : 'bg-white border-indigo-200 text-indigo-600 hover:bg-indigo-50 cursor-pointer dark:bg-slate-800 dark:border-slate-700 dark:text-indigo-400 dark:hover:bg-slate-700'
-                    }`}>
-                     <Upload size={24} className={isLiveMode ? "text-gray-400 dark:text-gray-600" : "text-gray-600 dark:text-gray-400"} />
-                     <div>
-                         <div className="font-bold">{t('data.import')}</div>
-                         <div className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-500">{isLiveMode ? "Disabled in Live Mode" : "Load backup"}</div>
-                     </div>
-                     <input 
-                        type="file" 
-                        className="hidden" 
-                        accept=".json" 
-                        onChange={handleImportFile} 
-                        disabled={isLiveMode}
-                    />
-                 </label>
-                 
-                 <button onClick={() => setHistoryModalOpen(true)} className="w-full text-left p-4 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition flex items-center gap-3 border border-indigo-200 bg-white shadow-sm dark:bg-slate-800 dark:border-slate-700 dark:text-indigo-400 dark:hover:bg-slate-700">
-                     <History size={24} className="text-gray-600 dark:text-gray-400" />
-                     <div>
-                         <div className="font-bold">{t('data.history')}</div>
-                         <div className="text-[10px] text-gray-500 mt-0.5 dark:text-gray-500">View changes</div>
-                     </div>
-                 </button>
-            </div>
+            <DataActionsSection
+                t={t}
+                setCSVModalOpen={setCSVModalOpen}
+                exportJSON={exportJSON}
+                isReadOnly={isReadOnly}
+                handleImportFile={handleImportFile}
+                setHistoryModalOpen={setHistoryModalOpen}
+            />
             
+            <AuthModal 
+                isOpen={isAuthModalOpen} 
+                onClose={() => setAuthModalOpen(false)} 
+                initialState={authModalState}
+                initialEmail={authModalEmail}
+                inviteToken={incomingInviteToken}
+                resetToken={resetToken}
+                onSuccess={(token, email, name, projects, userProfile) => {
+                    // Use Global Context Login to update 'isAuthenticated' state across the app
+                    login(token, email, name, 'email', projects, userProfile); 
+                    setAuthToken(token); // Update local state for immediate use
+                    
+                    setAuthModalOpen(false);
+                    showToast("Authenticated Successfully", "success");
+                    
+                    // Always Reset Modal State for next use
+                    setAuthModalState('LOGIN');
+
+                    // Clean URL - clean up the reset token or invite token
+                    const url = new URL(window.location.href);
+                    if (url.searchParams.has('reset_token')) {
+                        url.searchParams.delete('reset_token');
+                        setResetToken('');
+                        window.history.replaceState({}, document.title, url.toString());
+                    }
+                    if (url.searchParams.has('invite_token')) {
+                         // We probably joined the room already via handleConnect automation or will do so
+                         // But if we just logged in, we might want to keep it briefly? 
+                         // No, Login/Register success handles the invite logic on backend mostly
+                         // But the frontend `useEffect` for invite might want to run if we haven't connected yet.
+                         // Let's leave invite_token for the other effect to clean up AFTER connection
+                    }
+
+                    // If login was standalone, maybe we want to auto-connect?
+                    if (isClientMode) {
+                        handleConnect(true, token); // Pass token explicitly for immediate connection
+                    }
+                }}
+            />
+
             <ConfirmationModal 
                 isOpen={isDeleteConfirmOpen}
                 onClose={() => setIsDeleteConfirmOpen(false)}
                 onConfirm={confirmDeleteDB}
-                title="Delete Database"
-                message="DANGER: This will delete ALL data in the remote DB room and your local data. This action cannot be undone. Are you sure?"
-                confirmText="Delete Everything"
+                title="Delete Room & Data"
+                message="DANGER: This action will permanently delete this Room/Project and all its contents (nodes, edges, comments). This cannot be undone."
+                confirmText="Delete Room"
                 isDanger={true}
             />
             
             <CSVModal isOpen={isCSVModalOpen} onClose={() => setCSVModalOpen(false)} />
             <HistoryModal isOpen={isHistoryModalOpen} onClose={() => setHistoryModalOpen(false)} />
+
+            <ConfirmationModal
+                isOpen={isDisconnectModalOpen}
+                onClose={() => setIsDisconnectModalOpen(false)}
+                onConfirm={() => {
+                    handleDisconnect();
+                    setIsDisconnectModalOpen(false);
+                }}
+                title={t('disconnect.title')}
+                message={t('disconnect.message') + "\n\n" + t('disconnect.tip')}
+                confirmText={t('disconnect.confirm')}
+                cancelText={t('disconnect.cancel')}
+                isDanger={true}
+            />
         </div>
     );
 };

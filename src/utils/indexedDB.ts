@@ -2,8 +2,11 @@ import { NodeData, EdgeData } from './types';
 
 const DB_NAME = 'ComponentGraphDB';
 const DB_VERSION = 2;
+let dbInstance: IDBDatabase | null = null;
 
 export const initDB = (): Promise<IDBDatabase> => {
+    if (dbInstance) return Promise.resolve(dbInstance);
+
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -16,7 +19,12 @@ export const initDB = (): Promise<IDBDatabase> => {
         };
 
         request.onsuccess = (e) => {
-            resolve((e.target as IDBOpenDBRequest).result);
+            dbInstance = (e.target as IDBOpenDBRequest).result;
+            dbInstance.onversionchange = () => {
+                dbInstance?.close();
+                dbInstance = null;
+            };
+            resolve(dbInstance);
         };
 
         request.onerror = (e) => {

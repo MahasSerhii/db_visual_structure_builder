@@ -147,7 +147,7 @@ export const CommentsListModal: React.FC<CommentsListModalProps> = ({ onClose })
                                         updateComment({ ...c, isResolved: !c.isResolved });
                                     }}
                                     className={`p-1 rounded-full transition-colors ${c.isResolved ? 'text-green-500 bg-green-50 dark:bg-green-900/30' : 'text-gray-300 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30'}`}
-                                    title={c.isResolved ? "Mark as unresolved" : "Resolve"}
+                                    title={c.isResolved ? t('list.comm.unmark') : t('list.comm.mark')}
                                 >
                                     {c.isResolved ? <CheckCircle size={14} /> : <Circle size={14} />}
                                 </button>

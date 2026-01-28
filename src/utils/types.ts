@@ -62,18 +62,32 @@ export interface CommentReply {
 }
 
 export interface User {
-  id: string;
+  id: string; // email or uid
   name: string;
   color: string;
+  role?: 'host' | 'guest' | 'admin';
   lastActive: number;
+  visible?: boolean;
+}
+
+export interface SavedProject {
+  id: string;
+  name: string;
+  author: string;
+  url: string;
+  configStr: string;
+  lastAccessed: number;
+  role?: 'host' | 'guest' | 'admin';
 }
 
 export interface AppSettings {
   language: string;
   theme: 'light' | 'dark';
+  backgroundColor?: string;
   userProfile: {
     name: string;
     color: string;
+    lastUpdated?: number; // Timestamp for sync
   };
   defaultColors: {
     componentBg: string;

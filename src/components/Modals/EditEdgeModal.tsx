@@ -12,7 +12,7 @@ interface EditEdgeModalProps {
 }
 
 export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, edgeId }) => {
-    const { edges, nodes, updateEdge, deleteEdge } = useGraph();
+    const { edges, nodes, updateEdge, deleteEdge, t } = useGraph();
     const { showToast } = useToast();
     
     const [selectedEdge, setSelectedEdge] = useState<EdgeData | null>(null);
@@ -76,14 +76,14 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
             sourceProp,
             targetProp
         });
-        showToast('Connection Updated', 'success');
+        showToast(t('edit.edge.toast.updated'), 'success');
         onClose();
     };
 
     const handleDelete = async () => {
-        if (window.confirm('Delete this connection?')) {
+        if (window.confirm(t('edit.edge.delete'))) {
             await deleteEdge(selectedEdge.id);
-            showToast('Connection Deleted', 'info');
+            showToast(t('edit.edge.toast.deleted'), 'info');
             onClose();
         }
     };
@@ -93,7 +93,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
             <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-scale-in border border-gray-200">
                 <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gray-50">
                     <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                        Edit Connection
+                        {t('edit.edge.title')}
                     </h3>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition p-1 hover:bg-gray-200 rounded">
                         <X size={18} />
@@ -104,12 +104,12 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                     {/* Node Info - Detailed Header */}
                     <div className="flex items-center justify-between py-3 px-4 bg-indigo-50/50 rounded-lg border border-indigo-100">
                          <div className="flex flex-col items-start w-[40%]">
-                             <div className="text-[10px] uppercase font-bold text-gray-400 mb-0.5">Source</div>
+                             <div className="text-[10px] uppercase font-bold text-gray-400 mb-0.5">{t('edit.edge.source')}</div>
                              <div className="font-bold text-gray-800 truncate w-full text-sm" title={sourceNode?.title}>
                                  {sourceNode?.title}
                              </div>
                              <div className="text-[10px] text-indigo-600 font-mono mt-0.5 truncate w-full">
-                                {sourceProp || '(Body)'}
+                                {sourceProp || t('edit.edge.body')}
                              </div>
                          </div>
                          
@@ -118,12 +118,12 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                          </div>
 
                          <div className="flex flex-col items-end w-[40%] text-right">
-                             <div className="text-[10px] uppercase font-bold text-gray-400 mb-0.5">Target</div>
+                             <div className="text-[10px] uppercase font-bold text-gray-400 mb-0.5">{t('edit.edge.target')}</div>
                              <div className="font-bold text-gray-800 truncate w-full text-sm" title={targetNode?.title}>
                                  {targetNode?.title}
                              </div>
                              <div className="text-[10px] text-indigo-600 font-mono mt-0.5 truncate w-full">
-                                {targetProp || '(Body)'}
+                                {targetProp || t('edit.edge.body')}
                              </div>
                          </div>
                     </div>
@@ -131,26 +131,26 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                     {/* Properties Rewiring */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">Source Link</label>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">{t('edit.edge.sourceLink')}</label>
                             <select 
                                 value={sourceProp} 
                                 onChange={(e) => setSourceProp(e.target.value)}
                                 className="w-full p-2.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:border-indigo-500 outline-none transition"
                             >
-                                <option value="">(Node Body)</option>
+                                <option value="">{t('edit.edge.nodeBody')}</option>
                                 {sourceNode?.props?.map((p: any) => (
                                     <option key={p.name} value={p.name}>{p.name}</option>
                                 ))}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">Target Link</label>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">{t('edit.edge.targetLink')}</label>
                             <select 
                                 value={targetProp} 
                                 onChange={(e) => setTargetProp(e.target.value)}
                                 className="w-full p-2.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:border-indigo-500 outline-none transition"
                             >
-                                <option value="">(Node Body)</option>
+                                <option value="">{t('edit.edge.nodeBody')}</option>
                                 {targetNode?.props?.map((p: any) => (
                                     <option key={p.name} value={p.name}>{p.name}</option>
                                 ))}
@@ -160,7 +160,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
 
                     {/* Dependency Type */}
                     <div>
-                         <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">Relation Type</label>
+                         <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">{t('edit.edge.relType')}</label>
                          <div className="flex items-center gap-3">
                             <label className={`flex-1 p-2.5 border rounded-lg cursor-pointer text-center text-xs transition font-medium ${relationType === '1:1' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}>
                                 <input 
@@ -187,11 +187,11 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
 
                     {/* Label */}
                     <div>
-                        <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">Label (Optional)</label>
+                        <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">{t('edit.edge.label')}</label>
                         <input 
                             value={label} 
                             onChange={(e) => setLabel(e.target.value)}
-                            placeholder="e.g. FK_USER_ID"
+                            placeholder={t('edit.edge.ph.label')}
                             className="w-full p-2.5 text-xs border border-gray-200 rounded-lg focus:border-indigo-500 outline-none transition"
                         />
                     </div>
@@ -199,7 +199,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                     {/* Styling */}
                     <div className="grid grid-cols-3 gap-3">
                          <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">Color</label>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">{t('edit.edge.color')}</label>
                             <div className="flex gap-2 items-center">
                                 <input 
                                     type="color" 
@@ -211,7 +211,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                             </div>
                          </div>
                          <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">Stroke</label>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">{t('edit.edge.width')}</label>
                             <input 
                                 type="number" 
                                 min="1" max="10"
@@ -221,15 +221,15 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                             />
                          </div>
                          <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">Style</label>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">{t('edit.edge.style')}</label>
                             <select 
                                 value={strokeType}
                                 onChange={(e) => setStrokeType(e.target.value as any)}
                                 className="w-full p-2.5 text-xs text-center border border-gray-200 rounded-lg focus:border-indigo-500 outline-none bg-white"
                             >
-                                <option value="solid">Solid</option>
-                                <option value="dashed">Dashed</option>
-                                <option value="dotted">Dotted</option>
+                                <option value="solid">{t('edit.edge.style.solid')}</option>
+                                <option value="dashed">{t('edit.edge.style.dashed')}</option>
+                                <option value="dotted">{t('edit.edge.style.dotted')}</option>
                             </select>
                          </div>
                     </div>
@@ -242,7 +242,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                         onClick={handleDelete}
                         icon={<Trash2 size={14} />}
                     >
-                        Delete
+                        {t('edit.delete')}
                     </Button>
                     <div className="flex gap-2">
                         <Button 
@@ -250,14 +250,14 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                             size="sm" 
                             onClick={onClose}
                         >
-                            Cancel
+                            {t('edit.cancel')}
                         </Button>
                         <Button 
                             variant="primary" 
                             size="sm" 
                             onClick={handleSave}
                         >
-                            Save Changes
+                            {t('edit.save')}
                         </Button>
                     </div>
                 </div>

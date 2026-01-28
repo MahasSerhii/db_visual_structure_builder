@@ -4,7 +4,7 @@ import { useGraph } from '../../context/GraphContext';
 import { NodeData, EdgeData, Comment } from '../../utils/types';
 import { useToast } from '../../context/ToastContext';
 import { EditEdgeModal } from '../Modals/EditEdgeModal';
-import { X, Edit2, RotateCw, Lock, Unlock, MessageSquare, Check, CornerDownRight, Trash2 } from 'lucide-react';
+import { X, Edit2, RotateCw, Lock, Unlock, MessageSquare, Check, CornerDownRight, Trash2, Palette } from 'lucide-react';
 import ReactDOMServer from 'react-dom/server';
 import './animations.css';
 
@@ -22,9 +22,22 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
     const svgRef = useRef<SVGSVGElement>(null);
     const gRef = useRef<SVGGElement>(null);
     const simulationRef = useRef<d3.Simulation<any, any> | null>(null);
-    const { nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, addComment, updateComment, deleteComment, config, activeCommentId, setActiveCommentId } = useGraph();
+    const { nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, addComment, updateComment, deleteComment, config, activeCommentId, setActiveCommentId, isLiveMode, currentRoomId, updateProjectBackground } = useGraph();
     const { showToast } = useToast();
     const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
+    
+    // Refs for D3 Event Listeners (to avoid stale closures without re-binding events constantly)
+    const updateNodeRef = useRef(updateNode);
+    const updateEdgeRef = useRef(updateEdge);
+    const addCommentRef = useRef(addComment);
+    const setActiveCommentIdRef = useRef(setActiveCommentId);
+    const configRef = useRef(config);
+
+    useEffect(() => { updateNodeRef.current = updateNode; }, [updateNode]);
+    useEffect(() => { updateEdgeRef.current = updateEdge; }, [updateEdge]);
+    useEffect(() => { addCommentRef.current = addComment; }, [addComment]);
+    useEffect(() => { setActiveCommentIdRef.current = setActiveCommentId; }, [setActiveCommentId]);
+    useEffect(() => { configRef.current = config; }, [config]);
 
     // D3 Setup & Re-rendering
     useEffect(() => {
@@ -164,30 +177,50 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
     }, []);
 
 
+    const zoomTimeoutRef = useRef<any>(null);
+
     useEffect(() => {
         if (!svgRef.current || !gRef.current) return;
         const svg = d3.select(svgRef.current);
         const g = d3.select(gRef.current);
+        const roomKey = currentRoomId || 'local';
 
         const zoom = d3.zoom<SVGSVGElement, unknown>()
             .scaleExtent([0.1, 4])
-            .on("zoom", (event) => g.attr("transform", event.transform));
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+                // Debounce Save Viewport
+                if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
+                zoomTimeoutRef.current = setTimeout(() => {
+                    const { k, x, y } = event.transform;
+                    localStorage.setItem(`graph_viewport_${roomKey}`, JSON.stringify({ k, x, y }));
+                }, 500);
+            });
         svg.call(zoom).on("dblclick.zoom", null); 
+        
+        // Restore Viewport
+        const savedView = localStorage.getItem(`graph_viewport_${roomKey}`);
+        if (savedView) {
+            try {
+                const { k, x, y } = JSON.parse(savedView);
+                svg.call(zoom.transform, d3.zoomIdentity.translate(x, y).scale(k));
+            } catch(e) {}
+        }
         
         // Double click for traditional shift+dblclick
         svg.on("dblclick", function(event) {
             if (event.shiftKey) {
                  const [x, y] = d3.pointer(event, gRef.current);
                  const id = crypto.randomUUID();
-                 addComment({
+                 addCommentRef.current({
                      id,
                      x, y,
                      content: "New comment",
-                     author: { name: config.userProfile.name, color: config.userProfile.color },
+                     author: { name: configRef.current.userProfile.name, color: configRef.current.userProfile.color },
                      targetType: 'canvas',
                      createdAt: Date.now()
                  });
-                 setActiveCommentId(id);
+                 setActiveCommentIdRef.current(id);
             }
         });
 
@@ -195,7 +228,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         simulationRef.current = sim;
         
         return () => { sim.stop(); };
-    }, [config.userProfile]);
+    }, [currentRoomId]); // Re-init on room switch to restore room-specific zoom
 
     useEffect(() => {
         if (!simulationRef.current || !gRef.current) return;
@@ -203,10 +236,11 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         const g = d3.select(gRef.current);
         
         // --- PREPARE DATA ---
-        const d3Nodes = nodes.map(n => ({...n})); 
+        // Ensure nodes/edges are arrays to prevent crash
+        const d3Nodes = (nodes || []).map(n => ({...n})); 
         const nodeMap = new Map(d3Nodes.map(n => [n.id, n]));
         
-        const d3Edges = edges.map(e => {
+        const d3Edges = (edges || []).map(e => {
             const s = nodeMap.get(typeof e.source === 'object' ? (e.source as any).id : e.source);
             const t = nodeMap.get(typeof e.target === 'object' ? (e.target as any).id : e.target);
             return { ...e, source: s, target: t };
@@ -405,7 +439,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                      e.stopPropagation();
                      if(isLocked(d)) { triggerShake(d.source.id); triggerShake(d.target.id); return; }
                      const currentRot = d.labelRotation || 0;
-                     updateEdge({ ...d, source: d.source.id, target: d.target.id, labelRotation: (currentRot + 90) % 360 });
+                     updateEdgeRef.current({ ...d, source: d.source.id, target: d.target.id, labelRotation: (currentRot + 90) % 360 });
                 });
 
              gLabel.select(".label-delete-btn")
@@ -413,7 +447,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                 .on("click", (e) => {
                     e.stopPropagation(); // Stop propagation
                     if(isLocked(d)) { triggerShake(d.source.id); triggerShake(d.target.id); return; }
-                    updateEdge({ ...d, source: d.source.id, target: d.target.id, label: "" });
+                    updateEdgeRef.current({ ...d, source: d.source.id, target: d.target.id, label: "" });
                 });
 
              // Hover Effect
@@ -470,7 +504,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                      const newVal = node.value;
                      fo.remove();
                      group.selectAll("rect, text, .label-controls").style("display", null);
-                     updateEdge({ ...d, source: d.source.id, target: d.target.id, label: newVal });
+                     updateEdgeRef.current({ ...d, source: d.source.id, target: d.target.id, label: newVal });
                  };
 
                  textarea.on("blur", save)
@@ -495,10 +529,10 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                     // Add Comment Anchored to Edge
                      const [x, y] = d3.pointer(e, gRef.current);
                      const id = crypto.randomUUID();
-                     addComment({
+                     addCommentRef.current({
                          id, x, y,
                          content: "New comment",
-                         author: { name: config.userProfile.name, color: config.userProfile.color },
+                         author: { name: configRef.current.userProfile.name, color: configRef.current.userProfile.color },
                          targetId: d.id,
                          targetType: 'edge',
                          createdAt: Date.now()
@@ -549,7 +583,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                     d.fy = e.y; 
                     
                     sim.alphaTarget(0); 
-                    updateNode({ ...d, x: e.x, y: e.y }); 
+                    updateNodeRef.current({ ...d, x: e.x, y: e.y }); 
                 })
             );
 
@@ -567,12 +601,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             if (e.shiftKey) {
                  // Add Comment Anchored to Node
                  const h = getNodeHeight(d);
-                 addComment({
+                 addCommentRef.current({
                      id: crypto.randomUUID(),
                      x: d.x, 
                      y: d.y - h/2 - 40,
                      content: "New comment",
-                     author: { name: config.userProfile.name, color: config.userProfile.color },
+                     author: { name: configRef.current.userProfile.name, color: configRef.current.userProfile.color },
                      targetId: d.id,
                      targetType: 'node',
                      createdAt: Date.now()
@@ -631,12 +665,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                         width: '100%',
                         height: '100%'
                     }}>
-                        <Lock size={14} color="#374151" strokeWidth={2} />
+                        <Lock size={14} color="#ffffff" strokeWidth={2} />
                     </div>
                   )
                 : ReactDOMServer.renderToStaticMarkup(
-                    <div style={{ opacity: 0.3, transform: 'scale(0.9)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                         <Unlock size={14} color="white" />
+                    <div style={{ transform: 'scale(0.9)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                         <Unlock size={14} color="#ffffff" />
                     </div>
                   );
             
@@ -950,10 +984,24 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             </div>
 
             <div className="relative w-full h-full">
-                <svg ref={svgRef} className="w-full h-full" style={{ backgroundColor: config.defaultColors.canvasBg || '#f8fafc' }}>
+                <svg ref={svgRef} className="w-full h-full" style={{ backgroundColor: config.backgroundColor || config.defaultColors?.canvasBg || '#f8fafc' }}>
                     <defs></defs>
                     <g ref={gRef} />
                 </svg>
+
+                {/* Quick Background Change */}
+                <div className="absolute top-4 right-4 z-40 bg-white/80 dark:bg-slate-800/80 backdrop-blur p-2 rounded-lg shadow-md border border-gray-200 dark:border-slate-700 flex flex-col gap-2 transition-all hover:opacity-100 opacity-50">
+                    <div className="relative group w-6 h-6 flex items-center justify-center rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-slate-700" title="Change Background">
+                        <Palette size={16} className="text-gray-500 dark:text-gray-400" />
+                        <input
+                            type="color"
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                            value={config.backgroundColor || config.defaultColors?.canvasBg || '#f8fafc'}
+                            onChange={(e) => updateProjectBackground?.(e.target.value)}
+                        />
+                    </div>
+                </div>
+
                 {isCommentMode && (
                     <div 
                         className="absolute inset-0 z-50"

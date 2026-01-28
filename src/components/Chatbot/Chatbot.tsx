@@ -3,6 +3,7 @@ import { useGraph } from '../../context/GraphContext';
 import { NodeData } from '../../utils/types';
 import { Send, Bot, User } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { kmDatabase } from './db/general';
 
 interface Message {
     id: string;
@@ -10,22 +11,6 @@ interface Message {
     sender: 'user' | 'bot';
     timestamp: Date;
 }
-
-// Knowledge Base
-const kmDatabase = [
-    {
-        keywords: ["sql", "mysql", "postgres", "relational"],
-        answer: "SQL (Relational) databases like MySQL and PostgreSQL store data in tables with strict schemas. \n\n**MySQL**: Great for web apps, read-heavy loads. \n**PostgreSQL**: Advanced, supports JSONB, complex queries."
-    },
-    {
-        keywords: ["nosql", "mongo", "mongodb", "document"],
-        answer: "NoSQL databases like MongoDB store data as flexible documents (JSON/BSON). Ideal for rapid prototyping and unstructured data."
-    },
-    {
-        keywords: ["json", "import"],
-        answer: "You can import properties from JSON! Open a component, expand 'Import Properties', paste your JSON, and click 'Detect Types'."
-    }
-];
 
 export const Chatbot: React.FC = () => {
     const { nodes, addNode, updateNode } = useGraph();

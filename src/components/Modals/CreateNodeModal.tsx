@@ -299,13 +299,13 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
                                 <input 
                                     value={p.name} 
                                     onChange={(e) => updateProp(i, 'name', e.target.value)}
-                                    placeholder="Name" 
+                                    placeholder={t('lbl.name')} 
                                     className="w-1/3 p-1.5 text-xs border border-gray-300 dark:border-slate-600 rounded focus:border-indigo-500 outline-none bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
                                 />
                                 <input 
                                     value={p.type} 
                                     onChange={(e) => updateProp(i, 'type', e.target.value)}
-                                    placeholder="Type" 
+                                    placeholder={t('lbl.type')} 
                                     className="w-1/3 p-1.5 text-xs border border-gray-300 dark:border-slate-600 rounded focus:border-indigo-500 outline-none bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" 
                                 />
                                 <input 
@@ -322,7 +322,7 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
                     </div>
 
                     <button onClick={addProp} className="w-full flex items-center justify-center gap-2 py-1.5 border border-dashed border-gray-300 dark:border-slate-600 text-gray-500 dark:text-gray-400 rounded hover:bg-white dark:hover:bg-slate-800 hover:border-indigo-300 hover:text-indigo-600 text-xs font-medium transition-all">
-                        <Plus size={12} /> Add Property
+                        <Plus size={12} /> {t('lbl.addProp')}
                     </button>
                 </div>
 

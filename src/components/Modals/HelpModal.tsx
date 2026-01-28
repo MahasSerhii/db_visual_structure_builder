@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, ChevronDown, Plus, FileSpreadsheet, Download, Bot } from 'lucide-react';
 import { Chatbot } from '../Chatbot/Chatbot';
+import { useGraph } from '../../context/GraphContext';
 
 interface HelpModalProps {
     isOpen: boolean;
@@ -8,13 +9,14 @@ interface HelpModalProps {
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
+    const { t } = useGraph();
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center">
             <div className="bg-white rounded-2xl border border-gray-200 w-full max-w-3xl shadow-2xl h-[85vh] flex flex-col overflow-hidden relative">
                  <div className="bg-gray-100 p-6 flex justify-between items-center border-b border-gray-200">
-                    <h2 className="text-xl font-bold text-gray-800">Help & Instructions</h2>
+                    <h2 className="text-xl font-bold text-gray-800">{t('settings.help')}</h2>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">
                         <X size={24} />
                     </button>

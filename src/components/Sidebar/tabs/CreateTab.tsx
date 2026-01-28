@@ -242,7 +242,7 @@ export const CreateTab: React.FC = () => {
                     ))}
                     {props.length === 0 && !showJsonImport && (
                         <div className="text-center py-4 text-xs text-gray-400 border-2 border-dashed border-gray-200 rounded dark:border-slate-700 dark:text-gray-500">
-                            No properties added
+                            {t('create.noProps')}
                         </div>
                     )}
                 </div>

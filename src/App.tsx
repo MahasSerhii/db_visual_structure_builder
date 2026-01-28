@@ -1,26 +1,34 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { GraphCanvas } from './components/Canvas/GraphCanvas';
 import { GraphProvider, useGraph } from './context/GraphContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { EditNodeModal } from './components/Modals/EditNodeModal';
 import { WelcomeModal } from './components/Modals/WelcomeModal';
-import { Chatbot } from './components/Chatbot/Chatbot';
+import { AuthModal } from './components/Modals/AuthModal'; // Added
 import { LoadingKitty } from './components/UI/LoadingKitty'; 
 import { CommentsListModal } from './components/Modals/CommentsListModal'; 
 import { ComponentsListModal } from './components/Modals/ComponentsListModal';
 import { CreateNodeModal } from './components/Modals/CreateNodeModal';
+import { ToDoListModal } from './components/Modals/ToDoListModal'; // Added
 import { NodeData } from './utils/types';
 import { 
     Plus, MessageSquare, List, Lock, Unlock, Moon, Sun, 
-    Share2, User as UserIcon, X, MessageSquareText, Bell 
+    Share2, User as UserIcon, X, MessageSquareText, Bell, CheckSquare 
 } from 'lucide-react'; 
 import './styles/index.css';
+import { Chatbot } from './components/Chatbot/Chatbot';
 
 const MainLayout: React.FC = () => {
-    const { updateNode, deleteNode, nodes, addNode, comments, config, updateConfig, t } = useGraph(); 
+    const { 
+        updateNode, deleteNode, nodes, addNode, comments, config, updateConfig, 
+        t, isAuthenticated, login, isLoading, connectionStatus, retryConnection, 
+        isLiveMode, setLiveMode, isTransitioningToLive 
+    } = useGraph();  
     const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
     const [isEditModalOpen, setEditModalOpen] = useState(false);
+    const [isAuthModalOpen, setAuthModalOpen] = useState(false); // Added
+    const { showToast } = useToast();
     
     // UI States
     const [isLocked, setIsLocked] = useState(false);
@@ -28,8 +36,28 @@ const MainLayout: React.FC = () => {
     const [showComponentsList, setShowComponentsList] = useState(false);
     const [showChatModal, setShowChatModal] = useState(false); // AI Chat
     const [showCommentsList, setShowCommentsList] = useState(false); // Project Comments
+    const [showToDoList, setShowToDoList] = useState(false); // ToDo List
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+
+    // Initial Invite Handling
+    const [inviteToken, setInviteToken] = useState<string | undefined>(undefined);
+    const [resetToken, setResetToken] = useState<string | undefined>(undefined);
+
+    useEffect(() => {
+        const queryParams = new URLSearchParams(window.location.search);
+        const token = queryParams.get('token');
+        const rToken = queryParams.get('reset_token');
+
+        if (token) {
+           setInviteToken(token);
+           if (!isAuthenticated) setAuthModalOpen(true);
+        }
+        if (rToken) {
+           setResetToken(rToken);
+           setAuthModalOpen(true);
+        }
+    }, [isAuthenticated]);
     
     // Global Lock Loading State
     const [isLocking, setIsLocking] = useState(false);
@@ -37,15 +65,94 @@ const MainLayout: React.FC = () => {
     // Notifications Logic
     const unreadCount = React.useMemo(() => {
         // Count comments not by me
-        return comments.filter(c => c.author.name !== config.userProfile.name && !c.isResolved).length;
+        return (comments || []).filter(c => c.author.name !== config.userProfile.name && !c.isResolved).length;
     }, [comments, config.userProfile.name]);
 
     React.useEffect(() => {
-        const hasName = localStorage.getItem('my_user_name');
-        if (!hasName) setShowWelcomeModal(true);
-    }, []);
+        if (!isAuthenticated) {
+            // We do NOT strictly enforce open modal on reload unless it's a fresh visit or invite
+            // User requested: "if user not logged in and he skipped login it should be toast message"
+            // So we default to False, but if they try an action we prompt or show toast. 
+            // However, initially, we might want to prompt once?
+            // "when i reload pag eit always call auth modal" - User disliked this.
+            // So we only open if there is an invite token (logic above) or user clicks something.
+            setAuthModalOpen(false);
+        }
+    }, []); // Only on mount
+
+    const renderLoader = () => {
+         // Only show loader if we are in Live Mode and actively connecting/loading OR transitioning
+         if ((isLiveMode || isTransitioningToLive) && (isLoading || connectionStatus === 'connecting' || connectionStatus === 'reconnecting' || isTransitioningToLive)) {
+            const message = connectionStatus === 'reconnecting' 
+                ? "Connection lost, attempting to reconnect..." 
+                : "Connecting to Live Server...";
+
+            return (
+                <div className="absolute inset-0 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-[50]">
+                    <div className="flex flex-col items-center gap-4 p-6 bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-indigo-100 dark:border-indigo-900">
+                        <LoadingKitty size={80} color="#6366F1" />
+                        <span className="text-gray-500 dark:text-gray-400 font-mono text-xs animate-pulse">{message}</span>
+                    </div>
+                </div>
+            );
+         }
+         
+         if (isLiveMode && connectionStatus === 'failed') {
+            return (
+                <div className="absolute inset-0 bg-white dark:bg-slate-950 flex items-center justify-center z-[50]">
+                    <div className="flex flex-col items-center gap-6 max-w-md text-center p-6 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-red-100 dark:border-red-900/30">
+                        <div className="text-red-500 bg-red-50 dark:bg-red-900/20 p-4 rounded-full">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">Connection Failed</h2>
+                            <p className="text-gray-600 dark:text-gray-400 text-sm">
+                                We couldn't connect to the server. You can keep working locally or try again.
+                            </p>
+                        </div>
+                        <div className="flex flex-col gap-3 w-full">
+                             <button 
+                                onClick={() => retryConnection()}
+                                className="w-full px-4 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                                Retry Connection
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setLiveMode(false);
+                                    // Reset connection status so loader/error doesn't show next time unless explicitly toggled
+                                    // We need to expose a way to reset status, or `retryConnection` does it?
+                                    // Using `retryConnection` forces a fetch.
+                                    // Switching setLiveMode(false) should trigger GraphContext to switch data source.
+                                    // But we need to clear the "failed" status visually.
+                                    // We'll rely on GraphContext effects to clear status when mode changes or handle it here if exposed.
+                                    // Since we don't have setConnectionStatus exposed, we rely on setLiveMode triggering a refresh which resets status if logic is correct.
+                                }}
+                                className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-slate-750 transition-colors"
+                            >
+                                Use App Locally
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+         }
+         return null;
+    };
+
+    const checkAuth = (actionName: string) => {
+        if (!isAuthenticated) {
+            showToast(`Please log in to use ${actionName}`, 'warning');
+            setAuthModalOpen(true);
+            return false;
+        }
+        return true;
+    };
 
     const handleGlobalLock = async () => {
+        if (!checkAuth("Live Mode")) return;
+        
         if (isLocking) return;
         setIsLocking(true);
         const newState = !isLocked;
@@ -107,11 +214,19 @@ const MainLayout: React.FC = () => {
                          </button>
                          
                          <button 
-                             onClick={() => setShowCommentsList(!showCommentsList)}
+                             onClick={() => checkAuth("Comments") && setShowCommentsList(!showCommentsList)}
                              className={`p-2 rounded-lg transition-colors ${showCommentsList ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}
                              title={t('btn.comments')}
                          >
                              <MessageSquareText size={18} />
+                         </button>
+
+                        <button
+                            onClick={()=>setShowToDoList(true)}
+                             className={`p-2 rounded-lg transition-colors text-gray-400 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700`}
+                             title="To-Do List"
+                         >
+                             <CheckSquare size={18} />
                          </button>
 
                          <button 
@@ -124,7 +239,9 @@ const MainLayout: React.FC = () => {
 
                         <div className="h-6 w-px bg-gray-200 dark:bg-slate-700 mx-1"></div>
 
-                         <button className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-slate-600 rounded-lg text-xs font-bold transition-colors">
+                         <button className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-slate-600 rounded-lg text-xs font-bold transition-colors"
+                            onClick={() => checkAuth("Sharing") && showToast("Sharing feature coming soon!", "info")}
+                         >
                              <Share2 size={14} /> {t('btn.share')}
                          </button>
                          
@@ -145,6 +262,13 @@ const MainLayout: React.FC = () => {
                             </div>
                         </div>
                     )}
+                    
+                    {/* Connection Loader / Error Overlay (Scoped to Graph Area) */}
+                    {renderLoader()}
+
+                    {/* Connection Loader / Error Overlay */}
+                    {renderLoader()}
+
                     <GraphCanvas onNodeClick={handleNodeClick} isCommentMode={showCommentsList} />
                     
                     {/* Floating Action Buttons (Right Side) */}
@@ -164,7 +288,7 @@ const MainLayout: React.FC = () => {
                             <List size={20} />
                         </button>
                         <button 
-                            onClick={() => setShowCommentsList(!showCommentsList)}
+                            onClick={() => checkAuth("Comments") && setShowCommentsList(!showCommentsList)}
                             className={`bg-white dark:bg-slate-800 p-2.5 rounded-xl shadow-lg border border-gray-100 dark:border-slate-700 hover:scale-105 transition-all relative ${showCommentsList ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-300'}`}
                             title={t('btn.comments')}
                         >
@@ -180,7 +304,7 @@ const MainLayout: React.FC = () => {
                     {/* Bottom Right Tools */}
                     <div className="absolute bottom-4 right-4 flex gap-2">
                          <button 
-                            onClick={() => setShowChatModal(true)}
+                            onClick={() => checkAuth("AI Chat") && setShowChatModal(true)}
                             className="bg-indigo-600 text-white p-3 rounded-full shadow-lg hover:bg-indigo-700 hover:scale-105 transition-all flex items-center justify-center"
                          >
                              <MessageSquare size={20} />
@@ -229,13 +353,37 @@ const MainLayout: React.FC = () => {
                 </div>
             )}
 
+            {/* Auth Modal */}
+            <AuthModal 
+                isOpen={isAuthModalOpen} 
+                onClose={() => setAuthModalOpen(false)} 
+                initialState={resetToken ? 'RESET_PASSWORD' : (inviteToken ? 'REGISTER' : 'LOGIN')}
+                inviteToken={inviteToken}
+                resetToken={resetToken}
+                onSuccess={(token, email, name, projects, userProfile) => {
+                    login(token, email, name, 'email', projects, userProfile); 
+                    setAuthModalOpen(false);
+                    // Clear search params if needed, but keeping them might be useful for now
+                    if (inviteToken || resetToken) {
+                         const url = new URL(window.location.href);
+                         url.searchParams.delete('token');
+                         url.searchParams.delete('reset_token');
+                         window.history.replaceState({}, document.title, url.toString());
+                         setInviteToken(undefined);
+                         setResetToken(undefined);
+                    }
+                }}
+            />
+
             {/* Welcome Modal */}
-            <WelcomeModal isOpen={showWelcomeModal} onClose={() => setShowWelcomeModal(false)} />
+            {isAuthenticated && <WelcomeModal isOpen={showWelcomeModal} onClose={() => setShowWelcomeModal(false)} />}
 
             {/* Create Node Modal */}
             {showCreateModal && (
                 <CreateNodeModal onClose={() => setShowCreateModal(false)} />
             )}
+            
+            {showToDoList && <ToDoListModal isOpen={showToDoList} onClose={() => setShowToDoList(false)} />}
         </div>
     );
 };

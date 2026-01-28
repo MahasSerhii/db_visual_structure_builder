@@ -1,39 +1,84 @@
-.loading-kitty-container {
-    display: inline-block;
-}
+  .loading-kitty-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+  }
 
-.kitty-svg {
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-}
+  .cat-svg {
+      width: 100%;
+      height: auto;
+      overflow: visible;
+  }
 
-.thread-ball {
-    transform-origin: 82px 78px;
-    animation: ball-roll 2s ease-in-out infinite alternate;
-}
+  /* Tail wagging */
+  @keyframes wag {
 
-.kitty-paw-group {
-    transform-origin: 62px 68px;
-    animation: paw-swipe 0.5s ease-in-out infinite alternate;
-}
+      0%,
+      100% {
+          transform: rotate(-5deg);
+      }
 
-.kitty-head {
-    transform-origin: 50px 50px;
-    animation: head-bob 1.5s ease-in-out infinite alternate;
-}
+      50% {
+          transform: rotate(15deg);
+      }
+  }
 
-@keyframes ball-roll {
-    0% { transform: rotate(-10deg) translateX(0); }
-    100% { transform: rotate(120deg) translateX(3px); }
-}
+  .tail {
+      transform-origin: 155px 145px;
+      animation: wag 2.5s ease-in-out infinite;
+  }
 
-@keyframes paw-swipe {
-    0% { transform: rotate(0deg) scaleX(1); }
-    100% { transform: rotate(-15deg) scaleX(1.1); }
-}
+  /* Head tracks the ball movement */
+  @keyframes head-track {
 
-@keyframes head-bob {
-    0% { transform: rotate(-2deg); }
-    100% { transform: rotate(2deg); }
-}
+      0%,
+      100% {
+          transform: rotate(-8deg) translateX(-2px);
+      }
+
+      50% {
+          transform: rotate(8deg) translateX(2px);
+      }
+  }
+
+  .head {
+      transform-origin: 80px 110px;
+      animation: head-track 4s ease-in-out infinite;
+  }
+
+  /* Pupils move within the eyes to track the ball */
+  @keyframes eyes-follow {
+
+      0%,
+      100% {
+          transform: translateX(-2px);
+      }
+
+      50% {
+          transform: translateX(2px);
+      }
+  }
+
+  .pupils {
+      animation: eyes-follow 4s ease-in-out infinite;
+  }
+
+  /* Ball rolling from left to right and back */
+  @keyframes ball-roll {
+
+      0%,
+      100% {
+          transform: translateX(-60px) rotate(-360deg);
+      }
+
+      50% {
+          transform: translateX(60px) rotate(360deg);
+      }
+  }
+
+  .yarn-ball {
+      transform-origin: 100px 165px;
+      animation: ball-roll 4s ease-in-out infinite;
+  }
