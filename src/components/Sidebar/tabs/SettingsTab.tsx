@@ -4,7 +4,7 @@ import { useToast } from '../../../context/ToastContext';
 import { dbOp } from '../../../utils/indexedDB';
 
 import { Language } from '../../../utils/types';
-import { Moon, Sun, User, Palette, Globe, HelpCircle, Trash, RefreshCw, Key, Shield, ChevronDown, ChevronUp, LogOut } from 'lucide-react';
+import { Moon, Sun, User, Palette, Globe, HelpCircle, Trash, RefreshCw, Key, Shield, ChevronDown, ChevronUp, LogOut, Eye, EyeOff } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api') + '/auth';
 
@@ -13,7 +13,13 @@ export const SettingsTab: React.FC = () => {
     const { showToast } = useToast();
     
     // Local state for settings form
-    const [userName, setUserName] = useState<string>(config.userProfile.name || 'User');
+    // Initialize with stored name if config is default 'User' (which might haven't loaded yet or was reset)
+    const [userName, setUserName] = useState<string>(() => {
+        const storedName = localStorage.getItem('my_user_name');
+        return (config.userProfile.name && config.userProfile.name !== 'User') 
+            ? config.userProfile.name 
+            : (storedName || 'User');
+    });
     const [userColor, setUserColor] = useState<string>(config.userProfile.color);
     
     // Security State
@@ -23,6 +29,8 @@ export const SettingsTab: React.FC = () => {
     const [newPassword, setNewPassword] = useState('');
     const [isChangingPass, setIsChangingPass] = useState(false);
     const [isSecurityOpen, setIsSecurityOpen] = useState(false);
+    const [showOldPass, setShowOldPass] = useState(false);
+    const [showNewPass, setShowNewPass] = useState(false);
     
     useEffect(() => {
         try {
@@ -57,11 +65,20 @@ export const SettingsTab: React.FC = () => {
             return;
         }
 
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            showToast("You are not authenticated", "error");
+            return;
+        }
+
         setIsChangingPass(true);
         try {
             const res = await fetch(`${API_URL}/change-password`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ email, oldPassword, newPassword })
             });
             const data = await res.json();
@@ -91,12 +108,32 @@ export const SettingsTab: React.FC = () => {
         { val: 'es', label: 'Español' },
     ];
 
+    // Sync local state with global config when it changes externally (e.g. initial load or server sync)
+    useEffect(() => {
+        if (config.userProfile.name && config.userProfile.name !== 'User') {
+             // Only update if local is currently default/empty or strictly different (avoid overwrite while typing?)
+             // Actually, for simplicity and correctness on load:
+             if (userName === 'User' || userName === '') {
+                 setUserName(config.userProfile.name);
+             }
+        }
+        if (config.userProfile.color && config.userProfile.color !== userColor) {
+             setUserColor(config.userProfile.color);
+        }
+    }, [config.userProfile.name, config.userProfile.color]);
+
     // Debounce updates for User Profile to avoid constant context updates
     useEffect(() => {
         const timer = setTimeout(() => {
+            // Only update if we have a real name, don't overwrite with 'User' if we have better data
+            if (userName === 'User' && localStorage.getItem('my_user_name') && localStorage.getItem('my_user_name') !== 'User') {
+                 // Skip this update cycle to prevent overwrite?
+                 return;
+            }
+
             if (userName !== config.userProfile.name || userColor !== config.userProfile.color) {
                 const now = Date.now();
-                // Update Local Context
+                // Update Local Context (This also updates localStorage.app_config and my_user_name via updateConfig)
                 updateConfig({
                     ...config,
                     userProfile: {
@@ -116,7 +153,8 @@ export const SettingsTab: React.FC = () => {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${token}`
                         },
-                        body: JSON.stringify({ visible: true, name: userName, color: userColor, profileUpdatedAt: now })
+                        // Removed 'visible' as it is no longer used
+                        body: JSON.stringify({ name: userName, color: userColor, profileUpdatedAt: now })
                     }).catch(e => console.error("Profile Sync Failed", e));
                 }
             }
@@ -235,20 +273,41 @@ export const SettingsTab: React.FC = () => {
                         {isManualRegistration ? (
                         <div className="space-y-2 pt-2">
                              <div className="text-[10px] uppercase font-bold text-gray-400">{t('settings.security')}</div>
-                            <input 
-                                type="password"
-                                placeholder={t('settings.pass.current')}
-                                value={oldPassword} 
-                                onChange={(e) => setOldPassword(e.target.value)}
-                                className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-600 rounded p-1.5 text-xs outline-none focus:border-indigo-400 mb-1"
-                            />
-                            <input 
-                                type="password"
-                                placeholder={t('settings.pass.new')}
-                                value={newPassword} 
-                                onChange={(e) => setNewPassword(e.target.value)}
-                                className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-600 rounded p-1.5 text-xs outline-none focus:border-indigo-400"
-                            />
+                            
+                            <div className="relative">
+                                <input 
+                                    type={showOldPass ? "text" : "password"}
+                                    placeholder={t('settings.pass.current')}
+                                    value={oldPassword} 
+                                    onChange={(e) => setOldPassword(e.target.value)}
+                                    className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-600 rounded p-1.5 text-xs outline-none focus:border-indigo-400 pr-8"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowOldPass(!showOldPass)}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                >
+                                    {showOldPass ? <EyeOff size={12} /> : <Eye size={12} />}
+                                </button>
+                            </div>
+
+                            <div className="relative">
+                                <input 
+                                    type={showNewPass ? "text" : "password"}
+                                    placeholder={t('settings.pass.new')}
+                                    value={newPassword} 
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-600 rounded p-1.5 text-xs outline-none focus:border-indigo-400 pr-8"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowNewPass(!showNewPass)}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                >
+                                    {showNewPass ? <EyeOff size={12} /> : <Eye size={12} />}
+                                </button>
+                            </div>
+
                             <button 
                                 onClick={handleChangePassword}
                                 disabled={isChangingPass}

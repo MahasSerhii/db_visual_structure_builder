@@ -155,7 +155,7 @@ router.get('/:projectId', authenticate, checkAccess(['viewer', 'writer', 'admin'
             project: {
                 name: req.project.name,
                 role: req.role,
-                backgroundColor: req.project.backgroundColor,
+                backgroundColor: req.project.config?.backgroundColor || '#f8fafc',
                 config: req.project.config
             },
             history: history.map(h => ({
@@ -607,7 +607,15 @@ router.post('/:projectId/sync', authenticate, checkAccess(['writer', 'admin', 'h
 router.put('/:projectId/background', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
     try {
         const { color } = req.body;
-        req.project.backgroundColor = color;
+        
+        // Update config.backgroundColor
+        const config = req.project.config || {};
+        config.backgroundColor = color;
+        
+        // Use markModified if config is Mixed type
+        req.project.config = config;
+        req.project.markModified('config');
+        
         await req.project.save();
         
         const h = await History.create({

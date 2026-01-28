@@ -5,7 +5,7 @@ export interface IProject extends Document {
   name: string;
   ownerId: mongoose.Schema.Types.ObjectId;
   description?: string;
-  backgroundColor?: string;
+  // backgroundColor moved to config
   config?: any; // JSON config snapshot
   isDeleted: boolean;
   createdAt: Date;
@@ -17,7 +17,7 @@ const ProjectSchema: Schema = new Schema({
   name: { type: String, required: true },
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   description: { type: String },
-  backgroundColor: { type: String, default: '#f8fafc' },
+  // backgroundColor removed. stored in config.
   config: { type: Schema.Types.Mixed },
   isDeleted: { type: Boolean, default: false }
 }, { timestamps: true });

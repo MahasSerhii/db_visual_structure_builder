@@ -63,7 +63,6 @@ router.post('/invite', authenticate, async (req: Request, res: Response) => {
                 name: email.split('@')[0], // Use email prefix as default name
                 color: '#6366F1', // Default color
                 authorized: false, // Not yet authorized until they login
-                visible: true
             });
             console.log(`[User Created] Pre-registered user: ${email} (ID: ${user._id})`);
         } else {
@@ -167,7 +166,6 @@ router.post('/register', async (req: Request, res: Response) => {
                 password: hashedPassword,
                 name: name || email.split('@')[0], 
                 color: color || '#'+Math.floor(Math.random()*16777215).toString(16),
-                visible: true,
                 authorized: true // Mark as authorized on registration
             });
         } else {
@@ -227,7 +225,6 @@ router.post('/social-login', async (req: Request, res: Response) => {
                  email, 
                  name: name || email.split('@')[0],
                  color: '#'+Math.floor(Math.random()*16777215).toString(16),
-                 visible: true,
              });
         }
         
@@ -408,7 +405,7 @@ router.post('/verify-access', async (req: Request, res: Response) => {
 
 router.put('/profile', authenticate, async (req: Request, res: Response) => {
     try {
-        const { visible, name, color, profileUpdatedAt } = req.body;
+        const { name, color, profileUpdatedAt } = req.body;
         // The user payload is in req.user, but we should verify it exists
         const userEmail = (req as AuthRequest).user?.email;
         if (!userEmail) return res.status(401).json({ error: 'Unauthorized' });
@@ -423,7 +420,6 @@ router.put('/profile', authenticate, async (req: Request, res: Response) => {
         // However, if it's an auto-sync, we need to be careful.
         // For now, allow overwrite if explicitly requested via PUT.
         
-        if (visible !== undefined) user.visible = visible;
         if (name) user.name = name;
         if (color) user.color = color;
         if (profileUpdatedAt) user.profileUpdatedAt = new Date(profileUpdatedAt);
@@ -433,6 +429,46 @@ router.put('/profile', authenticate, async (req: Request, res: Response) => {
         res.json({ success: true, user });
     } catch(e) {
         res.status(500).json({ error: "Update Failed "});
+    }
+});
+
+router.get('/user', authenticate, async (req: Request, res: Response) => {
+    try {
+        const userEmail = (req as AuthRequest).user?.email;
+        if (!userEmail) return res.status(401).json({ error: 'Unauthorized' });
+        
+        const user = await User.findOne({ email: userEmail });
+        if (!user) return res.status(404).json({ error: "User not found" });
+        
+        res.json({ user });
+    } catch(e) {
+        res.status(500).json({ error: "Fetch Failed" });
+    }
+});
+
+router.post('/change-password', authenticate, async (req: Request, res: Response) => {
+    try {
+        const { oldPassword, newPassword } = req.body;
+        const userEmail = (req as AuthRequest).user?.email;
+        
+        if (!userEmail) return res.status(401).json({ error: 'Unauthorized' });
+        if (!oldPassword || !newPassword) return res.status(400).json({ error: "Missing fields" });
+
+        const user = await User.findOne({ email: userEmail });
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        const isMatch = await bcrypt.compare(oldPassword, user.password || '');
+        if (!isMatch) return res.status(400).json({ error: "Incorrect current password" });
+
+        if (newPassword.length < 6) return res.status(400).json({ error: "Password too short" });
+
+        user.password = await bcrypt.hash(newPassword, 10);
+        await user.save();
+
+        res.json({ success: true });
+    } catch(e) {
+        console.error("Change Password Error", e);
+        res.status(500).json({ error: "Change Password Failed" });
     }
 });
 

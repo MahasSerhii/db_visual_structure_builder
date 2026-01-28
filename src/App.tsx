@@ -71,14 +71,15 @@ const MainLayout: React.FC = () => {
     React.useEffect(() => {
         if (!isAuthenticated) {
             // We do NOT strictly enforce open modal on reload unless it's a fresh visit or invite
-            // User requested: "if user not logged in and he skipped login it should be toast message"
-            // So we default to False, but if they try an action we prompt or show toast. 
-            // However, initially, we might want to prompt once?
-            // "when i reload pag eit always call auth modal" - User disliked this.
-            // So we only open if there is an invite token (logic above) or user clicks something.
             setAuthModalOpen(false);
+            
+            // Show welcome modal for non-authenticated users (首次访问 - First Visit)
+            const hasSeenWelcome = localStorage.getItem('has_seen_welcome');
+            if (!hasSeenWelcome) {
+                setShowWelcomeModal(true);
+            }
         }
-    }, []); // Only on mount
+    }, [isAuthenticated]); // Check when auth state changes or on mount
 
     const renderLoader = () => {
          // Only show loader if we are in Live Mode and actively connecting/loading OR transitioning
@@ -376,7 +377,10 @@ const MainLayout: React.FC = () => {
             />
 
             {/* Welcome Modal */}
-            {isAuthenticated && <WelcomeModal isOpen={showWelcomeModal} onClose={() => setShowWelcomeModal(false)} />}
+            <WelcomeModal isOpen={showWelcomeModal} onClose={() => {
+                setShowWelcomeModal(false);
+                localStorage.setItem('has_seen_welcome', 'true');
+            }} />
 
             {/* Create Node Modal */}
             {showCreateModal && (

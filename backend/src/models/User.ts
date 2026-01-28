@@ -5,7 +5,7 @@ export interface IUser extends Document {
   email: string;
   name: string;
   color: string;
-  visible: boolean;
+  // visible field removed. Visibility is now controlled per-project in Access model only.
   authorized: boolean; // Whether user has completed login/registration
   profileUpdatedAt: Date;
   avatar?: string;
@@ -20,12 +20,13 @@ const UserSchema: Schema = new Schema({
   password: { type: String }, // Add password
   name: { type: String, required: true },
   color: { type: String, default: '#6366F1' },
-  visible: { type: Boolean, default: true },
+  // visible: { type: Boolean, default: true }, // Removed
   authorized: { type: Boolean, default: false }, // false for pre-registered via invite, true after auth
   profileUpdatedAt: { type: Date, default: Date.now },
-  avatar: { type: String },
   rememberMe: { type: Boolean, default: false },
-  lastActive: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  lastActive: { type: Date, default: Date.now },
+   avatar: { type: String },
 }, { timestamps: true });
 
 export default mongoose.model<IUser>('User', UserSchema);

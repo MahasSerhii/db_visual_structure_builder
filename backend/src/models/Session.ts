@@ -3,22 +3,14 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ISession extends Document {
     socketId: string;
     roomId: string;
-    userId?: string; // Stable ID to prevent duplicates
-    userEmail?: string;
-    userName: string;
-    userColor: string;
-    isVisible: boolean;
+    userId?: mongoose.Types.ObjectId; // Stable ID to prevent duplicates
     connectedAt: Date;
 }
 
 const SessionSchema: Schema = new Schema({
     socketId: { type: String, required: true, unique: true },
     roomId: { type: String, required: true },
-    userId: { type: String }, // New field
-    userEmail: { type: String },
-    userName: { type: String, default: 'Guest' },
-    userColor: { type: String, default: '#ccc' },
-    isVisible: { type: Boolean, default: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Changed to ObjectId
     connectedAt: { type: Date, default: Date.now }
 });
 

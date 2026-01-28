@@ -79,6 +79,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
         setSuccessMsg(null);
         setIsLoading(true);
 
+        const localName = localStorage.getItem('my_user_name');
+
         try {
             if (mode === 'REGISTER') {
                 if (password !== repeatPassword) {
@@ -91,7 +93,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                 const res = await fetch(`${API_URL}/register`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, inviteToken, password })
+                    body: JSON.stringify({ email, inviteToken, password, name: localName })
                 });
                 
                 const data = await res.json();
@@ -107,7 +109,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                 const res = await fetch(`${API_URL}/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password, inviteToken, rememberMe })
+                    body: JSON.stringify({ email, password, inviteToken, rememberMe, name: localName })
                 });
 
                 const data = await res.json();

@@ -122,7 +122,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         language: 'en',
         theme: 'light',
         backgroundColor: '#f8fafc',
-        userProfile: { name: '', color: '#6366F1', lastUpdated: Date.now() },
+        userProfile: { name: '', color: '#6366F1', lastUpdated: 0 },
         defaultColors: { componentBg: '#6366F1', propertyText: '#000000' }
     });
     
@@ -331,13 +331,13 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         const serverTime = userProfile?.profileUpdatedAt ? new Date(userProfile.profileUpdatedAt).getTime() : 0;
         const localTime = config.userProfile.lastUpdated || 0;
         
-        // If Server is newer -> Use Server Profile
-        if (serverTime > localTime && userProfile) {
+        // If Server is newer OR Local is uninitialized (0) -> Use Server Profile
+        if ((serverTime > localTime || localTime === 0) && userProfile) {
             console.log("Syncing Profile from Server");
             const merged = { ...config.userProfile };
             if (userProfile.name) merged.name = userProfile.name;
             if (userProfile.color) merged.color = userProfile.color;
-            merged.lastUpdated = serverTime;
+            merged.lastUpdated = serverTime || Date.now();
 
             const newConfig = { ...config, userProfile: merged };
             setConfig(newConfig);
@@ -354,7 +354,6 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                         'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify({ 
-                        visible: true, 
                         name: config.userProfile.name, 
                         color: config.userProfile.color, 
                         profileUpdatedAt: localTime 
@@ -369,14 +368,19 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  finalName = name || email.split('@')[0];
              }
              
+             // Check if we should adopt color if local is default
+             let finalColor = config.userProfile.color;
+             if ((!finalColor || finalColor === '#6366F1') && userProfile?.color) {
+                 finalColor = userProfile.color;
+             }
+
              setConfig(prev => {
                 const updated = { 
                     ...prev, 
                     userProfile: { 
                         ...prev.userProfile, 
                         name: finalName,
-                        // If we are strictly keeping local, do we update timestamp? 
-                        // Maybe not, unless we actually changed something.
+                        color: finalColor
                     }
                 };
                 localStorage.setItem('app_config', JSON.stringify(updated));
@@ -443,9 +447,70 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                 if (savedConfig) {
                     try {
                         const parsed = JSON.parse(savedConfig);
+                        
+                        // Check for 'my_user_name' override if profile name is missing
+                        const storedName = localStorage.getItem('my_user_name');
+                        if (storedName && (!parsed.userProfile?.name || parsed.userProfile.name === 'User')) {
+                             if (!parsed.userProfile) parsed.userProfile = {};
+                             parsed.userProfile.name = storedName;
+                        }
+
                         // Merge with default to ensure new fields exist
-                        setConfig(prev => ({ ...prev, ...parsed }));
+                         setConfig(prev => ({ 
+                             ...prev, 
+                             ...parsed,
+                             userProfile: {
+                                 ...prev.userProfile,
+                                 ...(parsed.userProfile || {}),
+                                 // Enforce the stored name preference if available
+                                 name: (storedName && (!parsed.userProfile?.name || parsed.userProfile.name === 'User')) 
+                                     ? storedName 
+                                     : (parsed.userProfile?.name || prev.userProfile.name)
+                             }
+                         }));
                     } catch(e) { console.error("Config Parse Error", e); }
+                } else {
+                    // No saved config, try to use stored name
+                    const storedName = localStorage.getItem('my_user_name');
+                    if (storedName) {
+                        setConfig(prev => ({
+                            ...prev,
+                            userProfile: {
+                                ...prev.userProfile,
+                                name: storedName
+                            }
+                        }));
+                    }
+                }
+
+                // If authenticated, fetch latest profile from server to ensure sync
+                const token = localStorage.getItem('auth_token');
+                if (token) {
+                     api.get('/auth/user')
+                        .then(res => {
+                            if (res.data && res.data.user) {
+                                const u = res.data.user;
+                                setConfig(prev => {
+                                    const next = {
+                                        ...prev,
+                                        userProfile: {
+                                            ...prev.userProfile,
+                                            name: u.name || prev.userProfile.name,
+                                            color: u.color || prev.userProfile.color,
+                                            lastUpdated: Date.now()
+                                        }
+                                    };
+                                    // Update local storage to match server for next time
+                                    localStorage.setItem('app_config', JSON.stringify(next));
+                                    // Also update the 'my_user_name' to keep it in sync for offline mode
+                                    if(u.name && u.name !== 'User') {
+                                        localStorage.setItem('my_user_name', u.name);
+                                    }
+                                    return next;
+                                });
+                            }
+                        })
+                        .catch(err => console.warn("Background Profile Sync Failed", err));
                 }
 
                 // Add Initial History State
@@ -930,6 +995,10 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     const updateConfig = (newConfig: AppSettings) => {
         setConfig(newConfig);
         localStorage.setItem('app_config', JSON.stringify(newConfig));
+        // Also update the fallback name if it's being set here
+        if (newConfig.userProfile?.name && newConfig.userProfile.name !== 'User') {
+            localStorage.setItem('my_user_name', newConfig.userProfile.name);
+        }
     };
 
     const updateProjectBackground = async (color: string) => {

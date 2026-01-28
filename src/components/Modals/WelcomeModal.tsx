@@ -13,14 +13,22 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({ isOpen, onClose }) =
     if (!isOpen) return null;
 
     const handleSave = () => {
+        // If nickname is empty, use 'Guest'. 
+        // NOTE: The backend will use this name if provided during registration, 
+        // OR if login happens, the backend name might overwrite this if sync is active.
         const name = nickname.trim() || 'Guest';
         updateConfig({
             ...config,
             userProfile: {
                 ...config.userProfile,
-                name: name
+                name: name,
+                // Only update timestamp if name actually changed? 
+                // Currently just refreshing it is fine.
+                lastUpdated: Date.now()
             }
         });
+        
+        // Also ensure username is in localStorage for immediate access
         localStorage.setItem('my_user_name', name);
         onClose();
     };
@@ -38,6 +46,9 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({ isOpen, onClose }) =
                     </div>
                     <h2 className="text-2xl font-bold text-gray-800">{t('welcome.title')}</h2>
                     <p className="text-gray-600 mt-2">{t('welcome.desc')}</p>
+                    <p className="text-xs text-gray-400 mt-2 italic px-4">
+                       If you already have an account, your existing name will be used after login. You can skip this step.
+                    </p>
                 </div>
                 
                 <div className="space-y-4">
