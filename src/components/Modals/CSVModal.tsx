@@ -3,9 +3,10 @@ import { useGraph } from '../../context/GraphContext';
 import { useToast } from '../../context/ToastContext';
 import { X, Download, Upload, FileSpreadsheet, FileText } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { NodeData, EdgeData } from '../../utils/types';
+import { NodeData, EdgeData, Comment } from '../../utils/types';
 import { dbOp } from '../../utils/indexedDB';
-import { uploadFullGraphToBackend } from '../../utils/api';
+// import { uploadFullGraphToBackend } from '../../utils/api';
+import { graphApi } from '../../api/graph';
 import * as XLSX from 'xlsx';
 
 
@@ -15,7 +16,7 @@ interface CSVModalProps {
 }
 
 export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
-    const { nodes, edges, refreshData, isReadOnly, t, isLiveMode, currentRoomId, comments } = useGraph();
+    const { nodes, edges, refreshData, isReadOnly, t, isLiveMode, currentRoomId  } = useGraph();
 
     const { showToast } = useToast();
     const [importFile, setImportFile] = useState<File | null>(null);
@@ -43,8 +44,8 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
          // Edges Sheet
          const edgesData = edges.map(e => ({
              id: e.id,
-             source: typeof e.source === 'object' ? (e.source as any).id : e.source,
-             target: typeof e.target === 'object' ? (e.target as any).id : e.target,
+             source: typeof e.source === 'object' ? (e.source as NodeData).id : e.source,
+             target: typeof e.target === 'object' ? (e.target as NodeData).id : e.target,
              label: e.label,
              sourceProp: e.sourceProp,
              targetProp: e.targetProp
@@ -54,76 +55,6 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
 
          XLSX.writeFile(wb, `graph_data_${new Date().getTime()}.xlsx`);
          showToast(t('csv.toast.exportSuccess'), "success");
-    };
-
-    const importFromExcel = async () => {
-        if (!importFile) {
-            showToast(t('csv.toast.selectFile'), "error");
-            return;
-        }
-
-        if (isLiveMode) {
-            if (!confirm("⚠️ CAUTION: You are importing data in LIVE Mode.\n\nThis will OVERWRITE the remote database.\n\nContinue?")) {
-                return;
-            }
-        } else {
-            if (nodes.length > 0 && !confirm(t('csv.confirm.overwrite'))) {
-                return;
-            }
-        }
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const data = e.target?.result;
-            try {
-                const wb = XLSX.read(data, { type: 'binary' });
-                const newNodes: NodeData[] = [];
-                const newEdges: EdgeData[] = [];
-
-                // Parse Nodes
-                if (wb.Sheets["Components"]) {
-                    const rawNodes = XLSX.utils.sheet_to_json(wb.Sheets["Components"]);
-                    rawNodes.forEach((obj: any) => {
-                         let props = [];
-                         try { if (obj.props) props = JSON.parse(obj.props); } catch(e){}
-                         
-                         newNodes.push({
-                            id: obj.id || uuidv4(),
-                            title: obj.title || 'Untitled',
-                            description: obj.description || '',
-                            color: obj.color || '#6366F1',
-                            x: parseFloat(obj.x) || 0,
-                            y: parseFloat(obj.y) || 0,
-                            docLink: obj.docLink,
-                            props: props,
-                            createdAt: new Date().toISOString()
-                         });
-                    });
-                }
-
-                // Parse Edges
-                if (wb.Sheets["Connections"]) {
-                    const rawEdges = XLSX.utils.sheet_to_json(wb.Sheets["Connections"]);
-                    rawEdges.forEach((obj: any) => {
-                        newEdges.push({
-                            id: obj.id || uuidv4(),
-                            source: obj.source,
-                            target: obj.target,
-                            label: obj.label,
-                            sourceProp: obj.sourceProp,
-                            targetProp: obj.targetProp
-                        });
-                    });
-                }
-                
-                await updateGraph(newNodes, newEdges);
-
-            } catch (err) {
-                console.error(err);
-                showToast(t('csv.toast.failparse'), "error");
-            }
-        };
-        reader.readAsBinaryString(importFile);
     };
 
     const handleDownloadCSV = () => {
@@ -151,8 +82,8 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
 
         // Edges
         edges.forEach(e => {
-            const sId = typeof e.source === 'object' ? (e.source as any).id : e.source;
-            const tId = typeof e.target === 'object' ? (e.target as any).id : e.target;
+            const sId = typeof e.source === 'object' ? (e.source as NodeData).id : e.source;
+            const tId = typeof e.target === 'object' ? (e.target as NodeData).id : e.target;
             const row = [
                 "connection",
                 e.id,
@@ -216,9 +147,13 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
                  // So comments remain in IndexedDB!
                  
                  // Retrieve comments to push
-                 const currentComments = await dbOp('comments', 'readonly', 'getAll') as any[];
+                 const currentComments = await dbOp('comments', 'readonly', 'getAll') as Comment[];
                  if (currentRoomId) {
-                     await uploadFullGraphToBackend(currentRoomId, newNodes, newEdges, currentComments, true);
+                     await graphApi.syncGraph(currentRoomId, {
+                        nodes: newNodes,
+                        edges: newEdges,
+                        comments: currentComments
+                     }, true);
                  }
                  showToast(t('csv.toast.success') + " (Synced to Live)", "success");
              } catch(e) {
@@ -271,41 +206,42 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
                         return c.replace(/""/g, '"'); 
                     });
 
-                    const obj: any = {};
+                    const obj: Record<string, string | null | undefined> = {};
                     headers.forEach((h, index) => {
                         if (index < row.length) {
                             obj[h] = row[index] === 'null' ? null : (row[index] === 'undefined' ? undefined : row[index]);
                         }
                     });
 
-                    if (obj.rowType === 'component') {
+                    if (obj['rowType'] === 'component') {
                         // Props parsing
                         let props = [];
                         try {
-                            if (obj.props) props = JSON.parse(obj.props);
+                            const pData = obj['props'];
+                            if (pData) props = JSON.parse(pData);
                         } catch (err) {
                              console.error("Props parsing error", err);
                         }
 
                         newNodes.push({
-                            id: obj.id || uuidv4(),
-                            title: obj.title || 'Untitled',
-                            description: obj.description || '',
-                            color: obj.color || '#6366F1',
-                            x: parseFloat(obj.x) || 0,
-                            y: parseFloat(obj.y) || 0,
-                            docLink: obj.docLink,
+                            id: obj['id'] || uuidv4(),
+                            title: obj['title'] || 'Untitled',
+                            description: obj['description'] || '',
+                            color: obj['color'] || '#6366F1',
+                            x: parseFloat(obj['x'] || '0'),
+                            y: parseFloat(obj['y'] || '0'),
+                            docLink: obj['docLink'] || undefined,
                             props: props,
                             createdAt: new Date().toISOString()
                         });
-                    } else if (obj.rowType === 'connection') {
+                    } else if (obj['rowType'] === 'connection') {
                         newEdges.push({
-                            id: obj.id || uuidv4(),
-                            source: obj.source,
-                            target: obj.target,
-                            label: obj.label,
-                            sourceProp: obj.sourceProp,
-                            targetProp: obj.targetProp
+                            id: obj['id'] || uuidv4(),
+                            source: obj['source'] || '',
+                            target: obj['target'] || '',
+                            label: obj['label'] || undefined,
+                            sourceProp: obj['sourceProp'] || undefined,
+                            targetProp: obj['targetProp'] || undefined
                         });
                     }
                 }

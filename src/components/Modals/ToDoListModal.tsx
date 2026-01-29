@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, Plus, Trash2, CheckSquare, Square, Check, ChevronRight, ChevronDown } from 'lucide-react';
 
 interface SubTask {
@@ -68,47 +68,44 @@ const DEFAULT_GOALS: Category[] = [
 ];
 
 export const ToDoListModal: React.FC<ToDoListModalProps> = ({ isOpen, onClose }) => {
-    const [categories, setCategories] = useState<Category[]>([]);
+    const [categories, setCategories] = useState<Category[]>(() => {
+        const saved = localStorage.getItem('todo_list');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                // Check if it's the old flat format (Validation: Array of objects without subTasks)
+                if (Array.isArray(parsed) && parsed.length > 0 && !parsed[0].subTasks) {
+                        // Migrate V1 -> V2
+                    const legacyCategory: Category = {
+                        id: 'legacy-' + Date.now(),
+                        title: 'Legacy Tasks',
+                        completed: false,
+                        expanded: true,
+                        subTasks: parsed.map((t: { id: string; text: string; completed: boolean }) => ({
+                            id: t.id,
+                            text: t.text,
+                            completed: t.completed
+                        }))
+                    };
+                    // Initialize with defaults AND legacy items
+                    // We check uniqueness of defaults by ID logic if needed, but here we just prepend defaults.
+                    return [...DEFAULT_GOALS, legacyCategory];
+                } else if (Array.isArray(parsed) && parsed.length > 0) {
+                    return parsed as Category[];
+                } else {
+                    return DEFAULT_GOALS;
+                }
+            } catch (e) {
+                console.error("Failed to parse todo list", e);
+                return DEFAULT_GOALS;
+            }
+        }
+        return DEFAULT_GOALS;
+    });
+
     const [newCategoryTitle, setNewCategoryTitle] = useState('');
     const [subTaskInputs, setSubTaskInputs] = useState<Record<string, string>>({});
 
-    useEffect(() => {
-        if (isOpen) {
-            const saved = localStorage.getItem('todo_list');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    // Check if it's the old flat format (Validation: Array of objects without subTasks)
-                    if (Array.isArray(parsed) && parsed.length > 0 && !parsed[0].subTasks) {
-                         // Migrate V1 -> V2
-                        const legacyCategory: Category = {
-                            id: 'legacy-' + Date.now(),
-                            title: 'Legacy Tasks',
-                            completed: false,
-                            expanded: true,
-                            subTasks: parsed.map((t: any) => ({
-                                id: t.id,
-                                text: t.text,
-                                completed: t.completed
-                            }))
-                        };
-                        // Initialize with defaults AND legacy items
-                        // We check uniqueness of defaults by ID logic if needed, but here we just prepend defaults.
-                        setCategories([...DEFAULT_GOALS, legacyCategory]);
-                    } else if (Array.isArray(parsed) && parsed.length > 0) {
-                        setCategories(parsed);
-                    } else {
-                        setCategories(DEFAULT_GOALS);
-                    }
-                } catch (e) {
-                    console.error("Failed to parse todo list", e);
-                    setCategories(DEFAULT_GOALS);
-                }
-            } else {
-                setCategories(DEFAULT_GOALS);
-            }
-        }
-    }, [isOpen]);
 
     const saveCategories = (newCats: Category[]) => {
         setCategories(newCats);

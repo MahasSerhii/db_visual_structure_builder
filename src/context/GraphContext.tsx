@@ -1,8 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { NodeData, EdgeData, User, AppSettings, Comment, UserProfile } from '../utils/types';
+import  { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
+import { NodeData, EdgeData, AppSettings, Comment, UserProfile, ActiveSessionUser, SavedProject, Language } from '../utils/types';
+import { AuthUser } from '../api/apiTypes';
 import { dbOp, initDB, deleteWholeDB } from '../utils/indexedDB';
 import { getTranslation } from '../utils/translations';
-import { api, uploadFullGraphToBackend } from '../utils/api';
+// import { api, uploadFullGraphToBackend } from '../utils/api'; // Deprecated
+import { authApi } from '../api/auth';
+import { graphApi } from '../api/graph';
 import { io, Socket } from 'socket.io-client';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'failed'; 
@@ -50,12 +53,12 @@ interface GraphContextType {
     setReadOnly: (readonly: boolean) => void;
     t: (key: string) => string;
     isAuthenticated: boolean;
-    activeUsers: any[];
+    activeUsers: ActiveSessionUser[];
     isUserVisible: boolean;
     toggleUserVisibility: () => void;
     authProvider: 'email' | 'google' | 'apple';
-    savedProjects: any[];
-    login: (token: string, email: string, name?: string, provider?: 'email' | 'google' | 'apple', projects?: any[], userProfile?: any) => void;
+    savedProjects: SavedProject[];
+    login: (token: string, email: string, name?: string, provider?: 'email' | 'google' | 'apple', projects?: SavedProject[], userProfile?: Partial<AuthUser>) => void;
     logout: () => Promise<void>;
     clearHistory: () => Promise<void>;
 }
@@ -88,6 +91,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connected');
+    const connectionStatusRef = useRef(connectionStatus);
+    useEffect(() => { connectionStatusRef.current = connectionStatus; }, [connectionStatus]);
     
     // Persistence: Initialize from LocalStorage
     const [currentRoomId, _setCurrentRoomId] = useState<string | null>(() => {
@@ -98,13 +103,13 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     });
     const [isTransitioningToLive, setTransitioningToLive] = useState(false);
 
-    const setCurrentRoomId = (id: string | null) => {
+    const setCurrentRoomId = useCallback((id: string | null) => {
         _setCurrentRoomId(id);
         if (id) localStorage.setItem('current_room_id', id);
         else localStorage.removeItem('current_room_id');
-    };
+    }, []);
 
-    const setLiveMode = (isLive: boolean) => {
+    const setLiveMode = useCallback((isLive: boolean) => {
         _setLiveMode(isLive);
         localStorage.setItem('is_live_mode', String(isLive));
         if (!isLive) {
@@ -112,15 +117,14 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         } else {
              // Trigger connect logic implicitly by letting effects run 
              // but we might want to set status to connecting to show loader immediately
-             if (connectionStatus === 'failed') setConnectionStatus('connecting'); // Reset failed if retrying live
+             setConnectionStatus(prev => prev === 'failed' ? 'connecting' : prev); // Reset failed if retrying live
         }
-    };
+    }, []);
 
     // New ReadOnly Access State
     const [isReadOnly, setReadOnly] = useState(false);
 
     // We keep local data in a ref or separate state to switch back
-    const [localCache, setLocalCache] = useState<{nodes: NodeData[], edges: EdgeData[]} | null>(null);
 
     const [userProfile, setUserProfile] = useState<UserProfile>({
         name: '', 
@@ -179,25 +183,26 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                     setUserId(payload.id);
                 }
             } catch (e) {
+                void e;
                 console.warn("Could not restore User ID from token");
             }
         }
     }, [isAuthenticated]);
     
-    const [savedProjects, setSavedProjects] = useState<any[]>(() => {
+    const [savedProjects, setSavedProjects] = useState<SavedProject[]>(() => {
         try {
             const saved = localStorage.getItem('saved_projects');
             return saved ? JSON.parse(saved) : [];
-        } catch(e) { return []; }
+        } catch(e) { void e; return []; }
     });
     const [authProvider, setAuthProvider] = useState<'email' | 'google' | 'apple'>(() => 
-        (localStorage.getItem('auth_provider') as any) || 'email'
+        (localStorage.getItem('auth_provider') as 'email' | 'google' | 'apple') || 'email'
     );
 
     // Socket.IO Setup
     const socketRef = useRef<Socket | null>(null);
     const [mySocketId, setMySocketId] = useState<string | null>(null);
-    const [activeUsers, setActiveUsers] = useState<any[]>([]);
+    const [activeUsers, setActiveUsers] = useState<ActiveSessionUser[]>([]);
 
     useEffect(() => {
         const socketUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace('/api', '');
@@ -242,11 +247,11 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              // Re-join logic on connection restore
              socket.on('connect', handleJoinRoom);
              
-             socket.on('presence:update', (users: any[]) => {
+             socket.on('presence:update', (users: ActiveSessionUser[]) => {
                  setActiveUsers(users);
              });
              
-             const handleNodeUpdate = (n: any) => {
+             const handleNodeUpdate = (n: NodeData) => {
                  setNodes(prev => {
                      // Check if update is newer? relying on server broadcoaster to be truth.
                      // Avoid loop if we just updated locally? 
@@ -266,13 +271,13 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              const handleNodeDelete = ({ id }: { id: string }) => {
                  setNodes(prev => prev.filter(n => n.id !== id));
                  setEdges(prev => prev.filter(e => {
-                     const s = typeof e.source === 'object' ? (e.source as any).id : e.source;
-                     const t = typeof e.target === 'object' ? (e.target as any).id : e.target;
+                     const s = typeof e.source === 'object' ? (e.source as NodeData).id : e.source;
+                     const t = typeof e.target === 'object' ? (e.target as NodeData).id : e.target;
                      return s !== id && t !== id;
                  }));
              };
 
-             const handleEdgeUpdate = (e: any) => {
+             const handleEdgeUpdate = (e: EdgeData) => {
                  setEdges(prev => {
                      const idx = prev.findIndex(item => item.id === e.id);
                      if (idx >= 0) {
@@ -288,7 +293,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                   setEdges(prev => prev.filter(e => e.id !== id));
              };
              
-             const handleCommentUpdate = (c: any) => {
+             const handleCommentUpdate = (c: Comment) => {
                  setComments(prev => {
                      const idx = prev.findIndex(item => item.id === c.id);
                      if (idx >= 0) {
@@ -321,7 +326,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              socket.on('history:add', handleHistoryAdd);
              socket.on('history:clear', handleHistoryClear);
              
-             socket.on('user:removed', (data: any) => {
+             socket.on('user:removed', (data: { userId: string; message?: string }) => {
                  const myUserId = localStorage.getItem('my_user_id');
                  
                  // 1. Update Active Users List locally for everyone (removes ghost user immediately)
@@ -352,7 +357,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  }
              });
 
-             socket.on('project:settings', (data: any) => {
+             socket.on('project:settings', (data: { config?: AppSettings; backgroundColor?: string }) => {
                  setConfig(prev => {
                      const next = { ...prev };
                      if (data.backgroundColor) {
@@ -393,21 +398,11 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  socket.off('presence:update');
              };
         }
-    }, [currentRoomId, isAuthenticated, userProfile.name, userProfile.color, isUserVisible]); // Re-join if profile changes
+    }, [currentRoomId, isAuthenticated, userProfile.name, userProfile.color, isUserVisible, authProvider, setCurrentRoomId, setLiveMode]); // Re-join if profile changes
 
-    useEffect(() => {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-            // setIsAuthenticated(true); // Already set by initializer
-            try {
-                // Decode email from token if possible, or store in LS
-                const payload = JSON.parse(atob(token.split('.')[1]));
-                // ...
-            } catch(e) {}
-        }
-    }, []);
 
-    const login = (token: string, email: string, name?: string, provider: 'email' | 'google' | 'apple' = 'email', projects: any[] = [], dbUserProfile?: any) => {
+
+    const login = (token: string, email: string, name?: string, provider: 'email' | 'google' | 'apple' = 'email', projects: SavedProject[] = [], dbUserProfile?: Partial<AuthUser>) => {
         localStorage.setItem('auth_token', token);
         localStorage.setItem('auth_provider', provider);
         localStorage.setItem('saved_projects', JSON.stringify(projects));
@@ -430,27 +425,20 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
             setUserProfile(merged);
             localStorage.setItem('my_user_name', merged.name);
             if (merged.color) localStorage.setItem('my_user_color', merged.color);
-            if (dbUserProfile._id || dbUserProfile.id) {
-                const uid = dbUserProfile._id || dbUserProfile.id;
+            if (dbUserProfile._id) {
+                const uid = dbUserProfile._id;
                 localStorage.setItem('my_user_id', uid);
                 setUserId(uid);
             }
         } else {
              // Local is newer -> Push to Server
              if (localTime > serverTime) {
-                 const socketUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace('/api', '') + '/api/auth/profile';
-                 fetch(socketUrl, {
-                    method: 'PUT',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ 
+                 authApi.updateProfile({ 
                         name: userProfile.name, 
                         color: userProfile.color, 
                         profileUpdatedAt: localTime 
                     })
-                 }).catch(e => console.warn("Auto-sync profile failed", e));
+                 .catch(e => console.warn("Auto-sync profile failed", e));
              }
 
              // Base logic:
@@ -482,7 +470,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const logout = async () => {
+    const logout = useCallback(async () => {
         // 0. Notify Backend to clear sessions
         if (socketRef.current) {
             socketRef.current.emit('auth:logout');
@@ -517,7 +505,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         
         // 4. Force Reload to ensure clean slate
         window.location.reload();
-    };
+    }, []);
 
     // Global Active Comment State (for Thread Modal that can differ from List Modal)
     const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
@@ -580,10 +568,10 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                 // If authenticated, fetch latest profile from server to ensure sync
                 const token = localStorage.getItem('auth_token');
                 if (token) {
-                     api.get('/auth/user')
+                     authApi.getUser()
                         .then(res => {
-                            if (res.data && res.data.user) {
-                                const u = res.data.user;
+                            if (res && res.user) {
+                                const u = res.user;
                                 if (u._id) localStorage.setItem('my_user_id', u._id);
                                 
                                 setUserProfile(prev => {
@@ -622,8 +610,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         loadData();
     }, []);
 
-    const refreshData = async (shouldForce = false) => {
-        if (connectionStatus === 'failed' && !shouldForce) return;
+    const refreshData = useCallback(async (shouldForce = false) => {
+        if (connectionStatusRef.current === 'failed' && !shouldForce) return;
 
         // CRITICAL FIX: Only fetch from Backend if we are strictly in Live Mode.
         // If we are in Local Mode (even with a RoomID set), we must use LocalDB.
@@ -636,11 +624,11 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
 
            while (attempts < maxAttempts) {
                try {
-                    const data = await api.get(`/graph/${currentRoomId}`);
-                    // Transform backend nodeId -> id
-                    const mappedNodes = data.nodes.map((n: any) => ({ ...n, id: n.nodeId }));
-                    const mappedEdges = data.edges.map((e: any) => ({ ...e, id: e.edgeId }));
-                    const mappedComments = data.comments.map((c: any) => ({ ...c, id: c.commentId }));
+                    const data = await graphApi.getGraph(currentRoomId);
+                    // Transform backend nodeId -> id (already handled by backend mapping usually, but sticking to NodeData type)
+                    const mappedNodes = data.nodes;
+                    const mappedEdges = data.edges;
+                    const mappedComments = data.comments;
 
                     setNodes(mappedNodes);
                     setEdges(mappedEdges);
@@ -666,11 +654,13 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
 
                     // Add to history
                     if (data.history && Array.isArray(data.history)) {
-                         // Map _id to id for history items
-                         const mappedHistory = data.history.map((h: any) => ({
-                             ...h,
-                             id: h.id || h._id
-                         }));
+                         const mappedHistory = data.history.map((h: unknown) => {
+                             const item = h as Partial<HistoryItem> & { _id?: string };
+                             return {
+                                 ...item,
+                                 id: item.id || item._id || 'unknown'
+                             } as HistoryItem;
+                         });
                          setHistory(mappedHistory);
                     }
 
@@ -678,11 +668,11 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                     setIsLoading(false);
                     return;
 
-               } catch (apiErr: any) {
+               } catch (apiErr) {
                     console.error(`Attempt ${attempts + 1} failed`, apiErr);
 
                     // CRITICAL FIX: Handle Stale Auth / Deleted User scenario
-                    const errMsg = apiErr.message || String(apiErr);
+                    const errMsg = apiErr instanceof Error ? apiErr.message : String(apiErr);
                     if (errMsg.includes('Unauthorized') || errMsg.includes('Invalid Token') || errMsg.includes('User not found') || errMsg.includes('jwt expired')) {
                          console.warn("Auth Session Inavlid. Resetting session.");
                          setLiveMode(false); // Force Local Mode
@@ -747,7 +737,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  setIsLoading(false);
              }
         }
-    };
+    }, [currentRoomId, isAuthenticated, isLiveMode, logout, setCurrentRoomId, setLiveMode]); // Removed connectionStatus from deps to avoid loop
 
     const retryConnection = async () => {
         await refreshData(true);
@@ -758,14 +748,14 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         refreshData(true);
         // Also clear history when changing rooms
         setHistory([]);
-    }, [currentRoomId, isAuthenticated]);
+    }, [currentRoomId, isAuthenticated, refreshData]);
 
     // Toggle Mode Logic
     useEffect(() => {
         // Always refresh data when switching modes to align with the new mode's source
         // If Live: refreshData() uses API. If Local: refreshData() uses LocalDB.
         refreshData();
-    }, [isLiveMode]);
+    }, [isLiveMode, refreshData]);
     
     const syncNodeChange = (node: NodeData) => {
         if (!socketRef.current || !isLiveMode) return;
@@ -828,7 +818,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
          // Clear Remote
          if (isLiveMode && currentRoomId) {
               try {
-                  await api.delete(`/graph/${currentRoomId}/history`);
+                  await graphApi.clearHistory(currentRoomId);
                   // Socket event is handled by backend emitting 'history:clear'
               } catch(e) {
                   console.error("Failed to clear remote history", e);
@@ -839,14 +829,14 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
          }
     };
 
-    const restoreSnapshot = async (snapshot: any) => {
+    const restoreSnapshot = async (snapshot: Partial<HistoryItem & GraphSnapshot>) => {
         if(checkReadOnly()) return;
         
         // If it's a Server History Item (has an ID but maybe no snapshot data directly if we optimized it out)
         if (snapshot.id && !snapshot.nodes && isLiveMode) {
              if (confirm("Revert this specific change on the server?")) {
                  try {
-                     await api.post(`/graph/${currentRoomId}/history/${snapshot.id}/revert`, {});
+                     await graphApi.revertHistory(currentRoomId!, snapshot.id);
                      // No need to reload, socket events will update graph
                  } catch(e) {
                      console.error("Revert Failed", e);
@@ -857,12 +847,16 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         }
 
         // Local Snapshot Restore
-        setNodes(snapshot.nodes);
-        setEdges(snapshot.edges);
-        setComments(snapshot.comments);
+        setNodes(snapshot.nodes || []);
+        setEdges(snapshot.edges || []);
+        setComments(snapshot.comments || []);
         
         if (isLiveMode && currentRoomId) {
-            uploadFullGraphToBackend(currentRoomId, snapshot.nodes || [], snapshot.edges || [], snapshot.comments || [], true);
+            graphApi.syncGraph(currentRoomId, {
+                nodes: snapshot.nodes || [],
+                edges: snapshot.edges || [],
+                comments: snapshot.comments || []
+            }, true);
         } else {
             // Restore to Local DB
             (async () => {
@@ -921,7 +915,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         await dbOp('comments', 'readwrite', 'put', comment);
 
         if (currentRoomId) {
-             api.put(`/graph/${currentRoomId}/comment`, { ...comment, id: comment.id }).catch(e => console.error("Mongo Add Comment Failed", e));
+             graphApi.addComment(currentRoomId, comment).catch(e => console.error("Mongo Add Comment Failed", e));
         }
 
         if (isLiveMode) {
@@ -937,7 +931,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         await dbOp('comments', 'readwrite', 'put', comment);
 
         if (currentRoomId) {
-             api.put(`/graph/${currentRoomId}/comment`, { ...comment, id: comment.id }).catch(e => console.error("Mongo Update Comment Failed", e));
+             graphApi.updateComment(currentRoomId, comment).catch(e => console.error("Mongo Update Comment Failed", e));
         }
 
         if (isLiveMode) {
@@ -952,7 +946,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         await dbOp('comments', 'readwrite', 'delete', id);
 
         if (currentRoomId) {
-             api.delete(`/graph/${currentRoomId}/comment/${id}`).catch(e => console.error("Mongo Delete Comment Failed", e));
+             graphApi.deleteComment(currentRoomId, id).catch(e => console.error("Mongo Delete Comment Failed", e));
         }
 
         if (isLiveMode) {
@@ -972,7 +966,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
 
         if (currentRoomId) {
              // Sync to Mongo
-             api.put(`/graph/${currentRoomId}/node`, { ...node, id: node.id }).catch(e => console.error("Mongo Save Failed", e));
+             graphApi.addNode(currentRoomId, node).catch(e => console.error("Mongo Save Failed", e));
         }
 
         if (isLiveMode) {
@@ -993,7 +987,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         await dbOp('nodes', 'readwrite', 'put', node);
         
         if (currentRoomId) {
-             api.put(`/graph/${currentRoomId}/node`, { ...node, id: node.id }).catch(e => console.error("Mongo Update Failed", e));
+             graphApi.updateNode(currentRoomId, node).catch(e => console.error("Mongo Update Failed", e));
         }
 
         if (isLiveMode) {
@@ -1009,8 +1003,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         
         const newNodes = nodes.filter(n => n.id !== id);
         const newEdges = edges.filter(e => {
-             const s = typeof e.source === 'object' ? (e.source as any).id : e.source;
-             const t = typeof e.target === 'object' ? (e.target as any).id : e.target;
+             const s = typeof e.source === 'object' ? (e.source as NodeData).id : e.source;
+             const t = typeof e.target === 'object' ? (e.target as NodeData).id : e.target;
              return s !== id && t !== id;
         });
 
@@ -1021,22 +1015,22 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         await dbOp('nodes', 'readwrite', 'delete', id);
         const allEdges = await dbOp('edges', 'readonly', 'getAll') as EdgeData[];
         const toDelete = allEdges.filter(e => {
-            const s = typeof e.source === 'object' ? (e.source as any).id : e.source;
-            const t = typeof e.target === 'object' ? (e.target as any).id : e.target;
+            const s = typeof e.source === 'object' ? (e.source as NodeData).id : e.source;
+            const t = typeof e.target === 'object' ? (e.target as NodeData).id : e.target;
             return s === id || t === id;
         });
         for(const e of toDelete) await dbOp('edges', 'readwrite', 'delete', e.id);
 
         if (currentRoomId) {
-             api.delete(`/graph/${currentRoomId}/node/${id}`).catch(e => console.error("Mongo Delete Failed", e));
+             graphApi.deleteNode(currentRoomId, id).catch(e => console.error("Mongo Delete Failed", e));
         }
 
         if (isLiveMode) {
             deleteRemoteNode(id);
             // Also delete connected edges remotely
             const edgesToDelete = edges.filter(e => {
-                 const s = typeof e.source === 'object' ? (e.source as any).id : e.source;
-                 const t = typeof e.target === 'object' ? (e.target as any).id : e.target;
+                 const s = typeof e.source === 'object' ? (e.source as NodeData).id : e.source;
+                 const t = typeof e.target === 'object' ? (e.target as NodeData).id : e.target;
                  return s === id || t === id;
             });
             edgesToDelete.forEach(e => deleteRemoteEdge(e.id));
@@ -1058,7 +1052,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         await dbOp('edges', 'readwrite', 'put', edge);
 
         if (currentRoomId) {
-             api.put(`/graph/${currentRoomId}/edge`, { ...edge, id: edge.id }).catch(e => console.error("Mongo Add Edge Failed", e));
+             graphApi.addEdge(currentRoomId, edge).catch(e => console.error("Mongo Add Edge Failed", e));
         }
         
         if (isLiveMode) {
@@ -1080,7 +1074,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         await dbOp('edges', 'readwrite', 'put', edge);
         
         if (currentRoomId) {
-             api.put(`/graph/${currentRoomId}/edge`, { ...edge, id: edge.id }).catch(e => console.error("Mongo Update Edge Failed", e));
+             graphApi.updateEdge(currentRoomId, edge).catch(e => console.error("Mongo Update Edge Failed", e));
         }
 
         if (isLiveMode) {
@@ -1101,7 +1095,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         await dbOp('edges', 'readwrite', 'delete', id);
 
         if (currentRoomId) {
-             api.delete(`/graph/${currentRoomId}/edge/${id}`).catch(e => console.error("Mongo Delete Edge Failed", e));
+             graphApi.deleteEdge(currentRoomId, id).catch(e => console.error("Mongo Delete Edge Failed", e));
         }
 
         if (isLiveMode) {
@@ -1118,7 +1112,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         
         // Sync with backend if in a room
         if (currentRoomId && isLiveMode) {
-             api.put(`/graph/${currentRoomId}/config`, { config: newConfig })
+             graphApi.updateConfig(currentRoomId, newConfig)
                 .catch(e => console.error("Config Sync Failed", e));
         }
     };
@@ -1132,7 +1126,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         
         if (currentRoomId && isLiveMode) {
             try {
-                await api.put(`/graph/${currentRoomId}/background`, { color });
+                await graphApi.updateBackground(currentRoomId, color);
             } catch(e) {
                 console.error("Backgound Sync Failed", e);
             }
@@ -1148,7 +1142,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const t = (key: string) => getTranslation(config.language as any || 'en', key);
+    const t = (key: string) => getTranslation((config.language as Language) || 'en', key);
 
     return (
         <GraphContext.Provider value={{
@@ -1174,6 +1168,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useGraph = () => {
     const context = useContext(GraphContext);
     if (context === undefined) {

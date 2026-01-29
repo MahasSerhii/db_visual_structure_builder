@@ -1,7 +1,7 @@
 import { dbOp } from './indexedDB';
-import { NodeData, EdgeData } from './types';
+import { NodeData, EdgeData, Comment } from './types';
 
-export const downloadJSON = (nodes: NodeData[], edges: EdgeData[], comments: any[]) => {
+export const downloadJSON = (nodes: NodeData[], edges: EdgeData[], comments: Comment[]) => {
     const data = { 
         nodes, 
         edges, 
@@ -54,8 +54,7 @@ export const processImportFile = (
                  } else {
                      resolve({ success: false, message: "Invalid File Format: Missing nodes or edges array." });
                  }
-             } catch (e) {
-                 console.error(e);
+             } catch {
                  resolve({ success: false, message: "Invalid JSON File" });
              }
         };
@@ -68,5 +67,5 @@ export const wipeDatabase = async () => {
         await dbOp('nodes', 'readwrite', 'clear');
         await dbOp('edges', 'readwrite', 'clear');
         await dbOp('comments', 'readwrite', 'clear');
-    } catch(e) { console.error("DB Wipe Failed", e); }
+    } catch { console.error("DB Wipe Failed"); }
 };

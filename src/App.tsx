@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { GraphCanvas } from './components/Canvas/GraphCanvas';
 import { GraphProvider, useGraph } from './context/GraphContext';
@@ -14,20 +14,40 @@ import { ToDoListModal } from './components/Modals/ToDoListModal'; // Added
 import { NodeData } from './utils/types';
 import { 
     Plus, MessageSquare, List, Lock, Unlock, Moon, Sun, 
-    Share2, User as UserIcon, X, MessageSquareText, Bell, CheckSquare 
+    Share2, User as UserIcon, X, MessageSquareText, CheckSquare 
 } from 'lucide-react'; 
 import './styles/index.css';
 import { Chatbot } from './components/Chatbot/Chatbot';
 
 const MainLayout: React.FC = () => {
     const { 
-        updateNode, deleteNode, nodes, addNode, comments, config, updateConfig, userProfile,
+        updateNode, deleteNode, nodes, comments, config, updateConfig, userProfile,
         t, isAuthenticated, login, isLoading, connectionStatus, retryConnection, 
         isLiveMode, setLiveMode, isTransitioningToLive 
     } = useGraph();  
     const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
     const [isEditModalOpen, setEditModalOpen] = useState(false);
-    const [isAuthModalOpen, setAuthModalOpen] = useState(false); // Added
+    
+    // Initial Invite Handling (Initialized from URL to avoid effect sync)
+    const [inviteToken, setInviteToken] = useState<string | undefined>(() => 
+        new URLSearchParams(window.location.search).get('token') || undefined
+    );
+    const [resetToken, setResetToken] = useState<string | undefined>(() => 
+        new URLSearchParams(window.location.search).get('reset_token') || undefined
+    );
+
+    const [isAuthModalOpen, setAuthModalOpen] = useState(() => {
+        // Initialize modal state based on tokens to avoid useEffect
+        if (typeof window !== 'undefined') {
+             const params = new URLSearchParams(window.location.search);
+             if (params.get('reset_token')) return true;
+             // Check auth roughly to decide default state (GraphContext is source of truth but this is just init)
+             const hasAuth = !!localStorage.getItem('auth_token'); 
+             if (params.get('token') && !hasAuth) return true;
+        }
+        return false;
+    });
+
     const { showToast } = useToast();
     
     // UI States
@@ -39,25 +59,6 @@ const MainLayout: React.FC = () => {
     const [showToDoList, setShowToDoList] = useState(false); // ToDo List
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showWelcomeModal, setShowWelcomeModal] = useState(false);
-
-    // Initial Invite Handling
-    const [inviteToken, setInviteToken] = useState<string | undefined>(undefined);
-    const [resetToken, setResetToken] = useState<string | undefined>(undefined);
-
-    useEffect(() => {
-        const queryParams = new URLSearchParams(window.location.search);
-        const token = queryParams.get('token');
-        const rToken = queryParams.get('reset_token');
-
-        if (token) {
-           setInviteToken(token);
-           if (!isAuthenticated) setAuthModalOpen(true);
-        }
-        if (rToken) {
-           setResetToken(rToken);
-           setAuthModalOpen(true);
-        }
-    }, [isAuthenticated]);
     
     // Global Lock Loading State
     const [isLocking, setIsLocking] = useState(false);
@@ -317,6 +318,7 @@ const MainLayout: React.FC = () => {
             {/* Edit Modal */}
             {selectedNode && (
                 <EditNodeModal 
+                    key={selectedNode.id}
                     node={selectedNode}
                     isOpen={isEditModalOpen}
                     onClose={() => setEditModalOpen(false)}

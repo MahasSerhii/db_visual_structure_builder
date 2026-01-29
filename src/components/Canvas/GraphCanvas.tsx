@@ -4,7 +4,7 @@ import { useGraph } from '../../context/GraphContext';
 import { NodeData, EdgeData, Comment } from '../../utils/types';
 import { useToast } from '../../context/ToastContext';
 import { EditEdgeModal } from '../Modals/EditEdgeModal';
-import { X, Edit2, RotateCw, Lock, Unlock, MessageSquare, Check, CornerDownRight, Trash2, Palette } from 'lucide-react';
+import { X, Lock, Unlock, MessageSquare, Trash2, Palette } from 'lucide-react';
 import ReactDOMServer from 'react-dom/server';
 import './animations.css';
 
@@ -12,6 +12,13 @@ const MIN_BOX_WIDTH = 200;
 const CONST_HEADER_HEIGHT = 28;
 const PROP_HEIGHT = 20;
 const BOTTOM_PADDING = 10;
+
+// Type definitions for D3
+type D3Node = NodeData & d3.SimulationNodeDatum;
+type D3Edge = Omit<EdgeData, 'source' | 'target'> & {
+    source: D3Node;
+    target: D3Node;
+};
 
 interface GraphCanvasProps {
     onNodeClick?: (node: NodeData) => void;
@@ -21,8 +28,8 @@ interface GraphCanvasProps {
 export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isCommentMode = false }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const gRef = useRef<SVGGElement>(null);
-    const simulationRef = useRef<d3.Simulation<any, any> | null>(null);
-    const { nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, addComment, updateComment, deleteComment, config, activeCommentId, setActiveCommentId, isLiveMode, currentRoomId, updateProjectBackground, userProfile } = useGraph();
+    const simulationRef = useRef<d3.Simulation<D3Node, undefined> | null>(null);
+    const { nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, addComment, updateComment, deleteComment, config, activeCommentId, setActiveCommentId, currentRoomId, updateProjectBackground, userProfile } = useGraph();
     const { showToast } = useToast();
     const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
     
@@ -63,28 +70,33 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
     }, [getNodeHeight]);
 
     // --- CURVE CALCULATION ---
-    const drawCurve = useCallback((d: any) => {
+    const drawCurve = useCallback((d: D3Edge) => {
         if (!d.source || !d.target || typeof d.source !== 'object' || typeof d.target !== 'object') return "";
-        if (typeof d.source.x !== 'number' || typeof d.target.x !== 'number') return "";
+        // d.source and d.target are D3Node objects here, which extend NodeData
+        // We cast because TS might sometimes see them as SimulationNodeDatum if not strictly typed in D3 setup
+        const source = d.source;
+        const target = d.target;
+        
+        if (typeof source.x !== 'number' || typeof target.x !== 'number') return "";
 
-        const H_source = getNodeHeight(d.source);
-        const H_target = getNodeHeight(d.target);
+        const H_source = getNodeHeight(source);
+        const H_target = getNodeHeight(target);
 
-        const sLeft = d.source.x - MIN_BOX_WIDTH / 2;
-        const sTop = d.source.y - H_source / 2;
-        const tLeft = d.target.x - MIN_BOX_WIDTH / 2;
-        const tTop = d.target.y - H_target / 2;
+        const sLeft = source.x - MIN_BOX_WIDTH / 2;
+        const sTop = source.y - H_source / 2;
+        const tLeft = target.x - MIN_BOX_WIDTH / 2;
+        const tTop = target.y - H_target / 2;
 
-        const sPropY = getPropYOffset(d.source, d.sourceProp);
-        const tPropY = getPropYOffset(d.target, d.targetProp);
+        const sPropY = getPropYOffset(source, d.sourceProp);
+        const tPropY = getPropYOffset(target, d.targetProp);
 
-        let sx, sy, tx, ty;
+        let sx, tx;
         let c1x, c1y, c2x, c2y;
 
-        sy = sTop + sPropY;
-        ty = tTop + tPropY;
+        const sy = sTop + sPropY;
+        const ty = tTop + tPropY;
 
-        const isTargetRight = d.target.x > d.source.x;
+        const isTargetRight = target.x > source.x;
 
         if (isTargetRight) {
             sx = sLeft + MIN_BOX_WIDTH; 
@@ -110,7 +122,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
              c2y = ty;
         }
 
-        if (d.source.id === d.target.id) {
+        if (source.id === target.id) {
             sx = sLeft + MIN_BOX_WIDTH;
             tx = sx;
             const loopSize = 50;
@@ -124,24 +136,27 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
     }, [getPropYOffset, getNodeHeight]);
 
     // Calculate Center for Label
-    const getLabelPos = useCallback((d: any) => {
-         if (!d.source || !d.target || typeof d.source.x !== 'number') return {x:0, y:0};
+    const getLabelPos = useCallback((d: D3Edge) => {
+         if (!d.source || !d.target || typeof d.source.x !== 'number' || typeof d.target.x !== 'number') return {x:0, y:0};
          
-         const H_source = getNodeHeight(d.source);
-         const H_target = getNodeHeight(d.target);
+         const source = d.source;
+         const target = d.target;
+
+         const H_source = getNodeHeight(source);
+         const H_target = getNodeHeight(target);
          
-         const sLeft = d.source.x - MIN_BOX_WIDTH / 2;
-         const sTop = d.source.y - H_source / 2;
-         const tLeft = d.target.x - MIN_BOX_WIDTH / 2;
-         const tTop = d.target.y - H_target / 2;
-         const sPropY = getPropYOffset(d.source, d.sourceProp);
-         const tPropY = getPropYOffset(d.target, d.targetProp);
+         const sLeft = source.x - MIN_BOX_WIDTH / 2;
+         const sTop = source.y - H_source / 2;
+         const tLeft = target.x - MIN_BOX_WIDTH / 2;
+         const tTop = target.y - H_target / 2;
+         const sPropY = getPropYOffset(source, d.sourceProp);
+         const tPropY = getPropYOffset(target, d.targetProp);
          
          const sy = sTop + sPropY;
          const ty = tTop + tPropY;
-         const isTargetRight = d.target.x > d.source.x;
-         let sx = isTargetRight ? sLeft + MIN_BOX_WIDTH : sLeft;
-         let tx = isTargetRight ? tLeft : tLeft + MIN_BOX_WIDTH;
+         const isTargetRight = target.x > source.x;
+         const sx = isTargetRight ? sLeft + MIN_BOX_WIDTH : sLeft;
+         const tx = isTargetRight ? tLeft : tLeft + MIN_BOX_WIDTH;
          const dist = Math.abs(tx - sx);
          
          let c1x, c1y, c2x, c2y;
@@ -174,12 +189,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         }
     };
 
-    const isLocked = useCallback((d: any) => {
+    const isLocked = useCallback((d: D3Edge) => {
         return d.source?.locked || d.target?.locked;
     }, []);
 
 
-    const zoomTimeoutRef = useRef<any>(null);
+    const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         if (!svgRef.current || !gRef.current) return;
@@ -206,7 +221,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             try {
                 const { k, x, y } = JSON.parse(savedView);
                 svg.call(zoom.transform, d3.zoomIdentity.translate(x, y).scale(k));
-            } catch(e) {}
+            } catch { /* ignore */ }
         }
         
         // Double click for traditional shift+dblclick
@@ -226,7 +241,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             }
         });
 
-        const sim = d3.forceSimulation().stop(); 
+        const sim = d3.forceSimulation<D3Node>().stop(); 
         simulationRef.current = sim;
         
         return () => { sim.stop(); };
@@ -239,19 +254,24 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         
         // --- PREPARE DATA ---
         // Ensure nodes/edges are arrays to prevent crash
-        const d3Nodes = (nodes || []).map(n => ({...n})); 
+        const d3Nodes = (nodes || []).map(n => ({...n})) as D3Node[]; 
         const nodeMap = new Map(d3Nodes.map(n => [n.id, n]));
         
         const d3Edges = (edges || []).map(e => {
-            const s = nodeMap.get(typeof e.source === 'object' ? (e.source as any).id : e.source);
-            const t = nodeMap.get(typeof e.target === 'object' ? (e.target as any).id : e.target);
+            // Check if source/target are already objects (from previous d3 pass if reused?) 
+            // or strings (from fresh state)
+            const sId = typeof e.source === 'object' ? (e.source as NodeData).id : e.source;
+            const tId = typeof e.target === 'object' ? (e.target as NodeData).id : e.target;
+            
+            const s = nodeMap.get(sId);
+            const t = nodeMap.get(tId);
             return { ...e, source: s, target: t };
-        }).filter(e => e.source && e.target);
+        }).filter(e => e.source && e.target) as D3Edge[];
 
         sim.nodes(d3Nodes);
 
         // --- EDGES ---
-        const linkGroup = g.selectAll(".edge-group").data(d3Edges, (d: any) => d.id);
+        const linkGroup = g.selectAll<SVGGElement, D3Edge>(".edge-group").data(d3Edges, (d) => d.id);
         linkGroup.exit().remove();
 
         // Enter
@@ -275,7 +295,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         // 3. Arrow Marker
         linkEnter.append("path")
             .attr("class", "edge-arrow")
-            .attr("fill", (d: any) => d.strokeColor || "#9CA3AF")
+            .attr("fill", (d) => d.strokeColor || "#9CA3AF")
             .style("pointer-events", "all"); 
 
         // 4. Label Group
@@ -283,7 +303,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             .attr("class", "edge-label-group")
             .attr("cursor", "pointer")
             .style("pointer-events", "all")
-            .style("opacity", (d: any) => d.label ? 1 : 0);
+            .style("opacity", (d) => d.label ? 1 : 0);
 
         labelGroup.append("rect")
             .attr("class", "label-bg")
@@ -298,7 +318,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             .attr("font-size", "10px")
             .attr("font-weight", "500")
             .attr("fill", "#374151")
-            .text((d: any) => d.label || "");
+            .text((d) => d.label || "");
 
         // Label Buttons Group (Delete + Rotate)
         const btnGroup = labelGroup.append("g")
@@ -339,20 +359,20 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             .attr("fill", "white")
             .text("×");
 
-        const linkMerge = linkEnter.merge(linkGroup as any);
+        const linkMerge = linkEnter.merge(linkGroup);
 
         // Visual Updates
         linkMerge.select(".edge-visible")
-            .attr("stroke", (d: any) => d.strokeColor || "#9CA3AF")
-            .attr("stroke-width", (d: any) => d.strokeWidth || 2)
-            .attr("stroke-dasharray", (d: any) => {
+            .attr("stroke", (d) => d.strokeColor || "#9CA3AF")
+            .attr("stroke-width", (d) => d.strokeWidth || 2)
+            .attr("stroke-dasharray", (d) => {
                  if(d.strokeType === 'dashed') return "5,5";
                  if(d.strokeType === 'dotted') return "2,2";
                  return "none";
             });
 
         linkMerge.select(".edge-arrow")
-            .attr("d", (d: any) => {
+            .attr("d", (d) => {
                 if (d.relationType === '1:n') {
                     return `M-8,-5 L0,0 M-8,5 L0,0 M-8,0 L0,0`; 
                 } else {
@@ -361,35 +381,35 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             });
 
         // Update Labels text
-        linkMerge.select(".edge-label-group text").text((d: any) => d.label || "");
+        linkMerge.select(".edge-label-group text").text((d) => d.label || "");
         
         // INTERACTION: Highlight Helpers
         const setHighlight = (edgeId: string, active: boolean) => {
-             const color = active ? "#3b82f6" : "";
+             // const color = active ? "#3b82f6" : ""; // Unused
              const width = active ? 3 : 2;
              
              // Edge
-             g.selectAll(".edge-visible")
-                .filter((d: any) => d.id === edgeId)
-                .attr("stroke", (d: any) => active ? "#3b82f6" : (d.strokeColor || "#9CA3AF"))
-                .attr("stroke-width", (d: any) => active ? width : (d.strokeWidth || 2));
+             g.selectAll<SVGPathElement, D3Edge>(".edge-visible")
+                .filter((d) => d.id === edgeId)
+                .attr("stroke", (d) => active ? "#3b82f6" : (d.strokeColor || "#9CA3AF"))
+                .attr("stroke-width", (d) => active ? width : (d.strokeWidth || 2));
                 
-             g.selectAll(".edge-arrow")
-                .filter((d: any) => d.id === edgeId)
-                .attr("fill", (d: any) => active ? "#3b82f6" : (d.strokeColor || "#9CA3AF"));
+             g.selectAll<SVGPathElement, D3Edge>(".edge-arrow")
+                .filter((d) => d.id === edgeId)
+                .attr("fill", (d) => active ? "#3b82f6" : (d.strokeColor || "#9CA3AF"));
 
              // Label border
-             g.selectAll(".edge-label-group")
-                .filter((d: any) => d.id === edgeId)
+             g.selectAll<SVGGElement, D3Edge>(".edge-label-group")
+                .filter((d) => d.id === edgeId)
                 .select(".label-bg")
                 .attr("stroke", active ? "#3b82f6" : "#E5E7EB");
                 
              if (active) {
-                const d: any = d3Edges.find(e => e.id === edgeId);
+                const d = d3Edges.find(e => e.id === edgeId);
                 if(d) {
                     // Highlight source & target nodes
-                    g.selectAll(".node-box")
-                      .filter((n: any) => n.id === d.source.id || n.id === d.target.id)
+                    g.selectAll<SVGRectElement, D3Node>(".node-box")
+                      .filter((n) => n.id === d.source.id || n.id === d.target.id)
                       .attr("stroke", "#3b82f6")
                       .attr("stroke-width", 2);
                 }
@@ -402,22 +422,22 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
 
         // Arrow Hover -> Label Highlight
         linkMerge.select(".edge-arrow")
-            .on("mouseover", (e, d: any) => {
+            .on("mouseover", (e, d) => {
                  if(isLocked(d)) { triggerShake(d.source.id); triggerShake(d.target.id); return; }
                  setHighlight(d.id, true);
             })
-            .on("mouseout", (e, d: any) => setHighlight(d.id, false));
+            .on("mouseout", (e, d) => setHighlight(d.id, false));
 
         // Edge Path Hover -> Label Highlight
         linkMerge.select(".edge-hit-area")
-             .on("mouseover", (e, d: any) => {
+             .on("mouseover", (e, d) => {
                  if(isLocked(d)) return;
                  setHighlight(d.id, true);
              })
-             .on("mouseout", (e, d: any) => setHighlight(d.id, false));
+             .on("mouseout", (e, d) => setHighlight(d.id, false));
 
         // Label Interaction Updates
-        linkMerge.select(".edge-label-group").each(function(d: any) {
+        linkMerge.select(".edge-label-group").each(function(d) {
              const gLabel = d3.select(this);
              const text = gLabel.select("text");
              const bbox = (text.node() as SVGTextElement).getBBox();
@@ -510,8 +530,8 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                  };
 
                  textarea.on("blur", save)
-                      .on("keydown", (event: any) => {
-                           if (event.key === "Enter" && !event.shiftKey) { 
+                      .on("keydown", (event: KeyboardEvent) => {
+                           if (event.key === "Enter" && !event.shiftKey) {  
                                event.preventDefault(); // Save on Enter
                                save();
                            }
@@ -524,8 +544,8 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
 
         // Edge Interactions
         linkMerge.select(".edge-hit-area")
-            .attr("cursor", (d: any) => isLocked(d) ? "not-allowed" : "pointer")
-            .on("dblclick", (e, d: any) => {
+            .attr("cursor", (d) => isLocked(d) ? "not-allowed" : "pointer")
+            .on("dblclick", (e, d) => {
                 e.stopPropagation();
                 if (e.shiftKey) {
                     // Add Comment Anchored to Edge
@@ -546,7 +566,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             });
         
         // --- TEMP DRAG LINE ---
-        let tempLine = g.selectAll(".temp-line").data([0]);
+        const tempLine = g.selectAll(".temp-line").data([0]);
         tempLine.enter().append("path")
             .attr("class", "temp-line")
             .attr("fill", "none")
@@ -556,15 +576,15 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             .style("pointer-events", "none");
 
         // --- NODES ---
-        const nodeGroup = g.selectAll<SVGGElement, any>(".node-group").data(d3Nodes, (d: any) => d.id);
+        const nodeGroup = g.selectAll<SVGGElement, D3Node>(".node-group").data(d3Nodes, (d) => d.id);
         nodeGroup.exit().remove();
 
         const nodeEnter = nodeGroup.enter().append("g")
             .attr("class", "node-group")
-            .attr("data-id", (d: any) => d.id); // For Shake Selector
+            .attr("data-id", (d) => d.id); // For Shake Selector
 
         // Drag Behavior
-        nodeEnter.call(d3.drag<any, any>()
+        nodeEnter.call(d3.drag<SVGGElement, D3Node>()
                 .on("start", (e, d) => { 
                     e.sourceEvent.stopPropagation(); 
                     if (d.locked) {
@@ -621,14 +641,14 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             .attr("width", MIN_BOX_WIDTH).attr("fill", "white").attr("stroke", "#E5E7EB").attr("rx", 6)
             .style("filter", "drop-shadow(0 4px 6px -1px rgb(0 0 0 / 0.1))");
         nodeEnter.append("rect").attr("class", "node-header-bg")
-            .attr("width", MIN_BOX_WIDTH).attr("height", CONST_HEADER_HEIGHT).attr("fill", (d: any) => d.color || "#6366F1").attr("rx", 6);
+            .attr("width", MIN_BOX_WIDTH).attr("height", CONST_HEADER_HEIGHT).attr("fill", (d) => d.color || "#6366F1").attr("rx", 6);
         nodeEnter.append("text").attr("class", "node-title")
             .attr("x", 10).attr("y", 19).attr("fill", "white").attr("font-weight", "bold").attr("font-size", "12px")
             .style("pointer-events", "none")
-            .text((d: any) => d.title);
+            .text((d) => d.title);
         
         // Lock Icon Button (ForeignObject)
-        const lockGroup = nodeEnter.append("foreignObject")
+        nodeEnter.append("foreignObject")
             .attr("class", "node-lock-btn")
             .attr("x", MIN_BOX_WIDTH - 24)
             .attr("y", 4)
@@ -642,7 +662,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
 
         const nodeMerge = nodeEnter.merge(nodeGroup);
         
-        nodeMerge.each(function(d: any) {
+        nodeMerge.each(function(d) {
             const el = d3.select(this);
             const h = getNodeHeight(d);
             
@@ -692,7 +712,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             if (d.props) {
                 const rowGroup = el.append("g").attr("class", "node-prop-row");
                 
-                d.props.forEach((prop: any, i: number) => {
+                d.props.forEach((prop, i) => {
                     const y = CONST_HEADER_HEIGHT + (i * PROP_HEIGHT);
                     const pg = rowGroup.append("g").attr("transform", `translate(0, ${y})`);
                     
@@ -702,7 +722,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                     if (d.locked) return; 
 
                     // --- PORT DRAG ---
-                    const portDrag = d3.drag<any, any>()
+                    const portDrag = d3.drag<SVGCircleElement, unknown>()
                         .container(function() { return gRef.current!; }) 
                         .on("start", (e) => {
                             e.sourceEvent.stopPropagation();
@@ -716,7 +736,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                                 dragSourceNode: d.id, 
                                 dragSourceProp: prop.name,
                                 startX: startAbsX, startY: startAbsY 
-                            } as any);
+                            });
                 
                             const [mx, my] = d3.pointer(e, gRef.current);
                             d3.select(gRef.current).select(".temp-line")
@@ -725,7 +745,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                         })
                         .on("drag", function(e) {
                             if(d.locked) return;
-                            const data: any = d3.select(gRef.current).datum();
+                            const data = d3.select(gRef.current).datum() as { startX: number; startY: number };
                             const [mx, my] = d3.pointer(e, gRef.current);
                             d3.select(gRef.current).select(".temp-line")
                                     .attr("d", `M ${data.startX} ${data.startY} L ${mx} ${my}`);
@@ -733,7 +753,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                         .on("end", function(e) {
                             if(d.locked) return;
                             d3.select(gRef.current).select(".temp-line").style("display", "none");
-                            const data: any = d3.select(gRef.current).datum();
+                            const data = d3.select(gRef.current).datum() as { dragSourceNode: string; dragSourceProp: string; startX: number; startY: number };
                             if(!data) return;
 
                             const [mx, my] = d3.pointer(e, gRef.current);
@@ -790,7 +810,8 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         });
 
         // --- COMMENTS ---
-        const commentGroup = g.selectAll(".comment-group").data(comments.filter(c => !c.isResolved), (c: any) => c.id);
+        const commentGroup = g.selectAll<SVGForeignObjectElement, Comment>(".comment-group")
+            .data(comments.filter(c => !c.isResolved), (c) => c.id);
         commentGroup.exit().remove();
 
         const commentEnter = commentGroup.enter().append("foreignObject")
@@ -799,10 +820,10 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             .attr("height", 100) // Dynamic?
             .attr("overflow", "visible");
 
-        const commentMerge = commentEnter.merge(commentGroup as any);
+        const commentMerge = commentEnter.merge(commentGroup);
         commentMerge.raise(); // Ensure always on top
 
-        commentMerge.each(function(c: any) {
+        commentMerge.each(function(c) {
             const el = d3.select(this);
             // Render React Component for Comment
             // We use standard HTML string with some inline styles for simplicity inside D3
@@ -822,8 +843,8 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                 const targetNode = d3Nodes.find(n => n.id === c.targetId);
                 // Find edge? 
                 if (targetNode) {
-                    cx = targetNode.x;
-                    cy = targetNode.y - getNodeHeight(targetNode)/2 - 20; // Above node
+                    cx = targetNode.x!;
+                    cy = targetNode.y! - getNodeHeight(targetNode)/2 - 20; // Above node
                 }
             }
             
@@ -869,54 +890,55 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
 
 
         sim.on("tick", () => {
-             linkMerge.select(".edge-hit-area").attr("d", drawCurve);
-             linkMerge.select(".edge-visible").attr("d", drawCurve);
+             linkMerge.select<SVGPathElement>(".edge-hit-area").attr("d", drawCurve);
+             linkMerge.select<SVGPathElement>(".edge-visible").attr("d", drawCurve);
              
-             linkMerge.select(".edge-arrow")
-                 .attr("transform", (d: any) => {
-                     const H_target = getNodeHeight(d.target);
-                     const tLeft = d.target.x - MIN_BOX_WIDTH / 2;
-                     const tTop = d.target.y - H_target / 2;
-                     const ty = tTop + getPropYOffset(d.target, d.targetProp);
-                     const isTargetRight = d.target.x > d.source.x;
+             linkMerge.select<SVGPathElement>(".edge-arrow")
+                 .attr("transform", (d) => {
+                     const target = d.target as D3Node;
+                     const H_target = getNodeHeight(target);
+                     const tLeft = target.x! - MIN_BOX_WIDTH / 2;
+                     const tTop = target.y! - H_target / 2;
+                     const ty = tTop + getPropYOffset(target, d.targetProp);
+                     const isTargetRight = d.target.x! > d.source.x!;
                      const tx = isTargetRight ? tLeft : tLeft + MIN_BOX_WIDTH;
                      const angle = isTargetRight ? 0 : 180;
                      return `translate(${tx}, ${ty}) rotate(${angle})`;
                  })
-                 .attr("fill", (d: any) => d.strokeColor || "#9CA3AF");
+                 .attr("fill", (d) => d.strokeColor || "#9CA3AF");
 
-             linkMerge.select(".edge-label-group").attr("transform", (d: any) => {
+             linkMerge.select<SVGGElement>(".edge-label-group").attr("transform", (d) => {
                  const pos = getLabelPos(d);
                  const rot = d.labelRotation || 0;
                  return `translate(${pos.x}, ${pos.y}) rotate(${rot})`;
              });
              
-             nodeMerge.attr("transform", (d: any) => `translate(${d.x - MIN_BOX_WIDTH/2}, ${d.y - getNodeHeight(d)/2})`);
+             nodeMerge.attr("transform", (d) => `translate(${d.x! - MIN_BOX_WIDTH/2}, ${d.y! - getNodeHeight(d)/2})`);
              // We also need to update Style transform for Animations (Shake uses CSS transform)
              // But CSS transform conflicts with SVG attr transform on Groups. 
              // We applied Shake via class. 
              // IMPORTANT: CSS transform overrides SVG transform attribute!
              // So 'shaking' class will break the node position if we use 'transform' in CSS.
              // We set --tx, --ty vars on the element and use them in keyframes.
-             nodeMerge.style("--tx", (d: any) => `${d.x - MIN_BOX_WIDTH/2}px`);
-             nodeMerge.style("--ty", (d: any) => `${d.y - getNodeHeight(d)/2}px`);
+             nodeMerge.style("--tx", (d) => `${d.x! - MIN_BOX_WIDTH/2}px`);
+             nodeMerge.style("--ty", (d) => `${d.y! - getNodeHeight(d)/2}px`);
              
              // Update Anchored Comments
-             commentMerge.each(function(c: any) {
+             commentMerge.each(function(c) {
                  if (c.targetId) {
                      if (c.targetType === 'node') {
                         const targetNode = d3Nodes.find(n => n.id === c.targetId);
                         if (targetNode) {
-                            const cx = targetNode.x;
-                            const cy = targetNode.y - getNodeHeight(targetNode)/2 - 30; 
+                            const cx = targetNode.x!;
+                            const cy = targetNode.y! - getNodeHeight(targetNode)/2 - 30; 
                             d3.select(this).attr("x", cx).attr("y", cy);
                         }
                      } else if (c.targetType === 'edge') {
                         const targetEdge = d3Edges.find(e => e.id === c.targetId); // Uses mapped d3Objects
                         if (targetEdge && targetEdge.source && targetEdge.target) {
                             // Find mid point
-                            const mx = (targetEdge.source.x + targetEdge.target.x) / 2;
-                            const my = (targetEdge.source.y + targetEdge.target.y) / 2;
+                            const mx = (targetEdge.source.x! + targetEdge.target.x!) / 2;
+                            const my = (targetEdge.source.y! + targetEdge.target.y!) / 2;
                             d3.select(this).attr("x", mx).attr("y", my - 20);
                         }
                      }
@@ -931,7 +953,10 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
     // Handle Comment Thread Modal via Event (Hack for D3 interaction)
     // Listen to custom event from D3
     useEffect(() => {
-        const handler = (e: any) => setActiveCommentId(e.detail);
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            setActiveCommentId(detail);
+        };
         window.addEventListener('openCommentThread', handler);
         return () => window.removeEventListener('openCommentThread', handler);
     }, [setActiveCommentId]);
@@ -1017,6 +1042,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             
             {editingEdgeId && (
                 <EditEdgeModal 
+                    key={editingEdgeId}
                     isOpen={!!editingEdgeId} 
                     onClose={() => setEditingEdgeId(null)}
                     edgeId={editingEdgeId}

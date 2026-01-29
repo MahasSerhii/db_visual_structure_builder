@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useGraph } from '../../../context/GraphContext';
 import { useToast } from '../../../context/ToastContext';
-import { dbOp } from '../../../utils/indexedDB';
-
 import { Language } from '../../../utils/types';
-import { Moon, Sun, User, Palette, Globe, HelpCircle, Trash, RefreshCw, Key, Shield, ChevronDown, ChevronUp, LogOut, Eye, EyeOff } from 'lucide-react';
+import { Moon, Sun, User, Palette, Globe, HelpCircle, Shield, ChevronDown, ChevronUp, LogOut, Eye, EyeOff } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api') + '/auth';
 
 export const SettingsTab: React.FC = () => {
-    const { config, updateConfig, refreshData, t, logout, isAuthenticated, authProvider, userProfile, updateUserProfile } = useGraph();
+    const { config, updateConfig, t, logout,  authProvider, userProfile, updateUserProfile } = useGraph();
     const { showToast } = useToast();
     
     // Local state for settings form
@@ -46,7 +44,7 @@ export const SettingsTab: React.FC = () => {
                      setIsManualRegistration(authProvider === 'email');
                 }
             }
-        } catch(e) {}
+        } catch { void 0; }
     }, [authProvider]);
 
     const handleLogout = () => {
@@ -89,7 +87,7 @@ export const SettingsTab: React.FC = () => {
             } else {
                 showToast(data.error || "Failed to update password", "error");
             }
-        } catch (e) {
+        } catch {
             showToast("Server error", "error");
         } finally {
             setIsChangingPass(false);
@@ -120,6 +118,7 @@ export const SettingsTab: React.FC = () => {
         if (userProfile.color && userProfile.color !== userColor) {
              setUserColor(userProfile.color);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userProfile.name, userProfile.color]);
 
     // Debounce updates for User Profile to avoid constant context updates
@@ -156,31 +155,8 @@ export const SettingsTab: React.FC = () => {
             }
         }, 500);
         return () => clearTimeout(timer);
-    }, [userName, userColor, email, userProfile]);
+    }, [userName, userColor, email, userProfile, updateUserProfile]);
 
-
-
-    const handleClearData = async () => {
-        if(window.confirm("Are you sure? This will delete all local data.")) {
-            try {
-                await dbOp('nodes', 'readwrite', 'clear');
-                await dbOp('edges', 'readwrite', 'clear');
-                await dbOp('comments', 'readwrite', 'clear');
-                refreshData(); 
-                
-                // Clear URL
-                const url = new URL(window.location.href);
-                url.searchParams.delete('token');
-                url.searchParams.delete('invite_token');
-                window.history.replaceState({}, document.title, url.pathname); // Keep pathname, remove query
-
-                showToast("All local data cleared", 'success');
-            } catch (e) {
-                console.error(e);
-                showToast("Failed to clear data", 'error');
-            }
-        }
-    };
 
     return (
         <div className="space-y-6">

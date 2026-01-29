@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useGraph } from '../../../context/GraphContext';
-import { Info, FolderOpen, User, Link, Database, RefreshCw, ChevronDown, ChevronRight, Activity } from 'lucide-react';
+import { Info, FolderOpen, User, ChevronDown, ChevronRight, Activity } from 'lucide-react';
+import { SavedProject } from '../../../utils/types';
 
 
 export const ConnectTab: React.FC = () => {
-    const { nodes, addEdge, t, savedProjects, config, currentRoomId, setCurrentRoomId, setGraphData, refreshData } = useGraph();
+    const { nodes, addEdge, t, savedProjects, currentRoomId, setCurrentRoomId } = useGraph();
     const [source, setSource] = useState('');
     const [target, setTarget] = useState('');
     const [sourceProp, setSourceProp] = useState('');
@@ -14,7 +15,7 @@ export const ConnectTab: React.FC = () => {
     // Accordion State
     const [isProjectsOpen, setIsProjectsOpen] = useState(true);
 
-    const handleOpenProject = (project: any) => {
+    const handleOpenProject = (project: SavedProject) => {
         // Optimistic switch
         setCurrentRoomId(project.id);
         // Socket in GraphContext deals with connection
@@ -23,20 +24,11 @@ export const ConnectTab: React.FC = () => {
 
     const isConnected = (id: string) => id === currentRoomId;
 
-    const [sourcePropsList, setSourcePropsList] = useState<{name: string}[]>([]);
-    const [targetPropsList, setTargetPropsList] = useState<{name: string}[]>([]);
+    const sourceNode = nodes.find(n => n.id === source);
+    const sourcePropsList = sourceNode?.props || [];
 
-    useEffect(() => {
-        const node = nodes.find(n => n.id === source);
-        setSourcePropsList(node?.props || []);
-        setSourceProp('');
-    }, [source, nodes]);
-
-    useEffect(() => {
-        const node = nodes.find(n => n.id === target);
-        setTargetPropsList(node?.props || []);
-        setTargetProp('');
-    }, [target, nodes]);
+    const targetNode = nodes.find(n => n.id === target);
+    const targetPropsList = targetNode?.props || [];
 
     const handleConnect = () => {
         if (!source || !target || source === target) return;
@@ -47,8 +39,12 @@ export const ConnectTab: React.FC = () => {
             sourceProp: sourceProp || undefined,
             targetProp: targetProp || undefined,
             label,
-            createdAt: new Date().toISOString()
-        } as any);
+            relationType: '1:n',
+            strokeWidth: 2,
+            strokeType: 'solid',
+            strokeColor: '#9CA3AF',
+            color: '#9CA3AF'
+        });
         // Reset
         setLabel('');
         setSource('');
@@ -112,7 +108,7 @@ export const ConnectTab: React.FC = () => {
 
             <div>
                 <label className="text-xs font-semibold text-gray-600 block mb-1 dark:text-gray-300">{t('connect.lbl.source')}</label>
-                <select value={source} onChange={e => setSource(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm focus:border-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-gray-200">
+                <select value={source} onChange={e => { setSource(e.target.value); setSourceProp(''); }} className="w-full p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm focus:border-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-gray-200">
                     <option value="">{t('connect.sel.source')}</option>
                     {nodes.map(n => <option key={n.id} value={n.id}>{n.title}</option>)}
                 </select>
@@ -128,7 +124,7 @@ export const ConnectTab: React.FC = () => {
 
             <div>
                 <label className="text-xs font-semibold text-gray-600 block mb-1 dark:text-gray-300">{t('connect.lbl.target')}</label>
-                <select value={target} onChange={e => setTarget(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm focus:border-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-gray-200">
+                <select value={target} onChange={e => { setTarget(e.target.value); setTargetProp(''); }} className="w-full p-2 border border-gray-300 rounded-lg bg-gray-50 text-sm focus:border-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-gray-200">
                     <option value="">{t('connect.sel.target')}</option>
                     {nodes.map(n => <option key={n.id} value={n.id}>{n.title}</option>)}
                 </select>

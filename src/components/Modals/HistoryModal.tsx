@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { RotateCcw, X, Clock, Activity, Trash2 } from 'lucide-react';
-import { useGraph } from '../../context/GraphContext';
+import { useGraph, GraphSnapshot, HistoryItem } from '../../context/GraphContext';
 import { ConfirmationModal } from './ConfirmationModal';
 
 interface HistoryModalProps {
@@ -21,9 +21,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
     //    For now, checkReadOnly() in clearHistory handles permission basics, and backend checks 'admin'/'host'
     const canClear = !isReadOnly && history.length > 0;
 
-    const handleRevert = (snapshot: any) => {
+    const handleRevert = (snapshot: GraphSnapshot | HistoryItem) => {
         if (confirm(t('history.revertConfirm'))) {
-             restoreSnapshot(snapshot);
+             restoreSnapshot(snapshot as Partial<HistoryItem & GraphSnapshot>);
              onClose();
         }
     };
@@ -83,7 +83,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                                                 </span>
                                             </div>
                                         </div>
-                                        {(item.snapshot || (item as any).canRevert) && !isReadOnly && !item.isRevertAction && (
+                                        {(item.snapshot || item.canRevert) && !isReadOnly && !item.isRevertAction && (
                                             <button 
                                                 onClick={() => handleRevert(item.snapshot || item)}
                                                 className="ml-4 flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 rounded-md border border-amber-200 hover:bg-amber-100 transition"

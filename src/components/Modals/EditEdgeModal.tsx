@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useGraph } from '../../context/GraphContext';
 import { useToast } from '../../context/ToastContext';
 import { X, Trash2, ArrowRight } from 'lucide-react';
-import { EdgeData, NodeData } from '../../utils/types';
+import { EdgeData, NodeProperty } from '../../utils/types';
 import { Button } from '../Common/Button';
 
 interface EditEdgeModalProps {
@@ -15,38 +15,25 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
     const { edges, nodes, updateEdge, deleteEdge, t } = useGraph();
     const { showToast } = useToast();
     
-    const [selectedEdge, setSelectedEdge] = useState<EdgeData | null>(null);
-    const [label, setLabel] = useState('');
-    const [color, setColor] = useState('#9CA3AF');
-    const [strokeWidth, setStrokeWidth] = useState(2);
-    const [strokeType, setStrokeType] = useState<'solid'|'dashed'|'dotted'>('solid');
-    const [relationType, setRelationType] = useState<'1:1'|'1:n'>('1:n');
-    const [sourceProp, setSourceProp] = useState('');
-    const [targetProp, setTargetProp] = useState('');
+    const initialEdge = edges.find(e => e.id === edgeId);
 
-    const [sourceNode, setSourceNode] = useState<NodeData | null>(null);
-    const [targetNode, setTargetNode] = useState<NodeData | null>(null);
+    const [selectedEdge] = useState<EdgeData | null>(initialEdge || null);
+    const [label, setLabel] = useState(initialEdge?.label || '');
+    const [color, setColor] = useState(initialEdge?.strokeColor || initialEdge?.color || '#9CA3AF');
+    const [strokeWidth, setStrokeWidth] = useState(initialEdge?.strokeWidth || 2);
+    const [strokeType, setStrokeType] = useState<'solid'|'dashed'|'dotted'>(initialEdge?.strokeType || 'solid');
+    const [relationType, setRelationType] = useState<'1:1'|'1:n'>(initialEdge?.relationType || '1:n');
+    const [sourceProp, setSourceProp] = useState(initialEdge?.sourceProp || '');
+    const [targetProp, setTargetProp] = useState(initialEdge?.targetProp || '');
 
-    useEffect(() => {
-        if (isOpen && edgeId) {
-            const edge = edges.find(e => e.id === edgeId);
-            if (edge) {
-                setSelectedEdge(edge);
-                setLabel(edge.label || '');
-                setColor(edge.strokeColor || edge.color || '#9CA3AF');
-                setStrokeWidth(edge.strokeWidth || 2);
-                setStrokeType(edge.strokeType || 'solid');
-                setRelationType(edge.relationType || '1:n');
-                setSourceProp(edge.sourceProp || '');
-                setTargetProp(edge.targetProp || '');
-
-                const sNode = nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source));
-                const tNode = nodes.find(n => n.id === (typeof edge.target === 'object' ? (edge.target as any).id : edge.target));
-                setSourceNode(sNode || null);
-                setTargetNode(tNode || null);
-            }
+    const getEdgeId = (nodeId: unknown): string | undefined => {
+        if (typeof nodeId === 'object' && nodeId !== null && 'id' in (nodeId as Record<string, unknown>)) {
+            return (nodeId as { id: string }).id;
         }
-    }, [isOpen, edgeId, edges, nodes]);
+        return nodeId as string | undefined;
+    };
+    const sourceNode = useMemo(() => nodes.find(n => n.id === getEdgeId(initialEdge?.source)) || null, [nodes, initialEdge]);
+    const targetNode = useMemo(() => nodes.find(n => n.id === getEdgeId(initialEdge?.target)) || null, [nodes, initialEdge]);
     
     // Auto-update target property on relation change based on user request ("if user chose one to many second prop should automatically changed to none")
     const handleRelationChange = (newType: '1:1' | '1:n') => {
@@ -138,7 +125,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                                 className="w-full p-2.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:border-indigo-500 outline-none transition"
                             >
                                 <option value="">{t('edit.edge.nodeBody')}</option>
-                                {sourceNode?.props?.map((p: any) => (
+                                {sourceNode?.props?.map((p: NodeProperty) => (
                                     <option key={p.name} value={p.name}>{p.name}</option>
                                 ))}
                             </select>
@@ -151,7 +138,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                                 className="w-full p-2.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:border-indigo-500 outline-none transition"
                             >
                                 <option value="">{t('edit.edge.nodeBody')}</option>
-                                {targetNode?.props?.map((p: any) => (
+                                {targetNode?.props?.map((p: NodeProperty) => (
                                     <option key={p.name} value={p.name}>{p.name}</option>
                                 ))}
                             </select>
@@ -224,7 +211,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                             <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5 opacity-75">{t('edit.edge.style')}</label>
                             <select 
                                 value={strokeType}
-                                onChange={(e) => setStrokeType(e.target.value as any)}
+                                onChange={(e) => setStrokeType(e.target.value as 'solid' | 'dashed' | 'dotted')}
                                 className="w-full p-2.5 text-xs text-center border border-gray-200 rounded-lg focus:border-indigo-500 outline-none bg-white"
                             >
                                 <option value="solid">{t('edit.edge.style.solid')}</option>

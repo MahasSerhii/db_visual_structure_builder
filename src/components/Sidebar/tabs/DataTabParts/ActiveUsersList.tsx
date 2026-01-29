@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { UserProfile, UserRoleType } from '../../../../utils/types';
+import { UserProfile, UserRoleType, ActiveSessionUser, RoomAccessUser } from '../../../../utils/types';
 import { ChevronUp, ChevronDown, Eye, EyeOff, Trash2, LogOut } from 'lucide-react';
 
 interface ActiveUsersListProps {
     t: (key: string) => string;
     isConnected: boolean;
-    connectedUsers: any[];
+    connectedUsers: ActiveSessionUser[];
     isClientMode: boolean; // Keep for interface compat, but less relevant now
     isUsersListOpen: boolean;
     setIsUsersListOpen: (val: boolean) => void;
@@ -17,7 +17,7 @@ interface ActiveUsersListProps {
     isProjectAuthor?: boolean; // Is current user the project author
     onRemoveUser?: (accessId: string, userName: string) => void; // Callback to remove user
     onLeaveRoom?: (accessId: string, userName: string) => void; // Callback for user to leave room
-    roomAccessUsers?: any[]; // List of users with access to room
+    roomAccessUsers?: RoomAccessUser[]; // List of users with access to room
     currentUserId?: string | null;
     mySocketId?: string | null;
 }
@@ -26,7 +26,6 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
     t, isConnected, connectedUsers, isUsersListOpen, setIsUsersListOpen, userProfile, isInvisible, toggleInvisible,
     isProjectAuthor = false, onRemoveUser, onLeaveRoom, roomAccessUsers = [], currentUserId, mySocketId
 }) => {
-    console.log("connectedUsers", connectedUsers)
     
     // All hooks must be at the top, before any conditional returns
     const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
@@ -123,7 +122,7 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
             );
 
             return {
-                id: u.socketId || u.id,
+                id: (u.socketId || u.id) as string,
                 userId: u.userId,
                 name: u.name || 'Anonymous',
                 color: u.color || '#ccc',
@@ -167,7 +166,7 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
     // Get access ID for a user to enable removal
     const getAccessIdForUser = (userName: string): string | null => {
         const user = roomAccessUsers?.find(u => u && u.name === userName);
-        return user?.id || null;
+        return user?.accessId || null;
     };
     
     // With Live Mode (Socket), connectedUsers should be populated.
@@ -187,7 +186,7 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                 <div className="space-y-1.5 animate-slide-in">
                         {displayUsers.length > 0 ? (
                             displayUsers.map(u => {
-                                const accessId = (u as any).accessUser ? (u as any).accessUser.id : getAccessIdForUser(u.name);
+                                const accessId = u.accessUser ? u.accessUser.accessId : getAccessIdForUser(u.name);
                                 
                                 // CAN REMOVE: Am I author? Is target NOT me? Do we have access ID?
                                 const canRemove = isProjectAuthor && !u.isMe && !!accessId;
@@ -229,7 +228,7 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            setExpandedMenu(expandedMenu === u.id ? null : u.id);
+                                                            setExpandedMenu(expandedMenu === u.id ? null : u.id as string);
                                                         }}
                                                         className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 focus:outline-none transition p-0.5"
                                                         title="User options"

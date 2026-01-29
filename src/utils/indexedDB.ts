@@ -1,5 +1,3 @@
-import { NodeData, EdgeData } from './types';
-
 const DB_NAME = 'ComponentGraphDB';
 const DB_VERSION = 2;
 let dbInstance: IDBDatabase | null = null;
@@ -37,7 +35,7 @@ export const dbOp = async <T>(
     storeName: 'nodes' | 'edges' | 'config' | 'comments',
     mode: IDBTransactionMode,
     op: 'put' | 'get' | 'getAll' | 'delete' | 'clear',
-    data?: any
+    data?: unknown
 ): Promise<T> => {
     const db = await initDB();
     return new Promise((resolve, reject) => {
@@ -46,14 +44,10 @@ export const dbOp = async <T>(
         
         let request: IDBRequest;
         if (op === 'put') request = store.put(data);
-        else if (op === 'get') request = store.get(data);
+        else if (op === 'get') request = store.get(data as IDBValidKey);
         else if (op === 'getAll') request = store.getAll();
-        else if (op === 'delete') request = store.delete(data);
-        else if (op === 'clear') request = store.clear();
-        else {
-            reject(new Error(`Unknown operation: ${op}`));
-            return;
-        }
+        else if (op === 'delete') request = store.delete(data as IDBValidKey);
+        else request = store.clear();
 
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useGraph } from '../../../context/GraphContext';
 import { useToast } from '../../../context/ToastContext';
-import { Trash2, Plus, FileJson, AlertCircle, Database, Layers, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trash2, Plus, FileJson, Database, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 
 export const CreateTab: React.FC = () => {
     const { addNode, config, t } = useGraph();
@@ -11,20 +11,12 @@ export const CreateTab: React.FC = () => {
     const [color, setColor] = useState(config.defaultColors.componentBg || '#6366F1');
     const [props, setProps] = useState<{name: string, type: string, color: string}[]>([]);
     
-    // Update local state if config changes (e.g. if user just came from Settings)
-    useEffect(() => {
-        if (!title && !desc && props.length === 0) {
-             // Only auto-update color if form is empty/uncouched, or user might be annoyed
-             setColor(config.defaultColors.componentBg || '#6366F1');
-        }
-    }, [config.defaultColors.componentBg]);
-    
     // JSON Import State
     const [jsonInput, setJsonInput] = useState('');
     const [showJsonImport, setShowJsonImport] = useState(false);
     const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
 
-    const extractPropsFromData = (data: any, mode: 'types' | 'values') => {
+    const extractPropsFromData = (data: Record<string, unknown>, mode: 'types' | 'values') => {
         const extractedProps: {name: string, type: string, color: string}[] = [];
         let count = 0;
         const entries = Object.entries(data);
@@ -63,8 +55,9 @@ export const CreateTab: React.FC = () => {
             x: 100 + Math.random() * 50,
             y: 100 + Math.random() * 50,
             props,
-            createdAt: new Date().toISOString()
-        } as any);
+            createdAt: new Date().toISOString(),
+            locked: false
+        });
         // Reset form
         setTitle('');
         setDesc('');
@@ -86,14 +79,14 @@ export const CreateTab: React.FC = () => {
         setProps(newProps);
     };
 
-    const handleJsonImport = (mode: 'types' | 'values', dataObj?: any) => {
+    const handleJsonImport = (mode: 'types' | 'values', dataObj?: Record<string, unknown>) => {
         let data = dataObj;
         
         if (!data) {
              if (!jsonInput.trim()) return;
              try {
                 data = JSON.parse(jsonInput);
-             } catch(e) {
+             } catch {
                  showToast('JSON Parse Error', 'error');
                  return;
              }
@@ -105,13 +98,13 @@ export const CreateTab: React.FC = () => {
                 return;
             }
 
-            const newProps = extractPropsFromData(data, mode);
+            const newProps = extractPropsFromData(data as Record<string, unknown>, mode);
             
             setProps(prev => [...prev, ...newProps]);
             setJsonInput('');
             setShowJsonImport(false);
             showToast(`Imported ${newProps.length} properties via ${mode}`, 'success');
-        } catch (e) {
+        } catch {
             showToast('Processing Error', 'error');
         }
     };
@@ -132,7 +125,7 @@ export const CreateTab: React.FC = () => {
                         return;
                     }
                     
-                    const extractedProps = extractPropsFromData(json, mode);
+                    const extractedProps = extractPropsFromData(json as Record<string, unknown>, mode);
                     
                     const newNode = {
                         id: crypto.randomUUID(),
@@ -142,10 +135,11 @@ export const CreateTab: React.FC = () => {
                         x: 100 + Math.random() * 150,
                         y: 100 + Math.random() * 150,
                         props: extractedProps,
-                        createdAt: new Date().toISOString()
+                        createdAt: new Date().toISOString(),
+                        locked: false
                     };
                     
-                    addNode(newNode as any);
+                    addNode(newNode);
 
                 } catch (err) {
                     console.error(err);

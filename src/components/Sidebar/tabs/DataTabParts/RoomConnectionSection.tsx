@@ -29,8 +29,7 @@ interface RoomConnectionSectionProps {
 
 export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
     t, isClientMode, isConnected, isRestoringSession, isLiveMode, roomId, setRoomId,
-    handleDeleteDB, handleDisconnect, showLoginUI, loginEmail, setLoginEmail,
-    handleLoginRequest, isLoggingIn, isConnecting, connectionStatus, handleConnect, toggleLiveMode, lastSyncTime,
+    handleDeleteDB, handleDisconnect, showLoginUI, isConnecting, connectionStatus, handleConnect, toggleLiveMode, lastSyncTime,
     isAuthenticated, onOpenAuthModal
 }) => {
     

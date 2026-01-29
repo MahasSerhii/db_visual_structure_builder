@@ -63,14 +63,9 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
         };
     }, [isDragging]);
 
-    // Initial Color Sync
-    useEffect(() => {
-        if (!title && !desc && props.length === 0) {
-             setColor(config.defaultColors.componentBg || '#6366F1');
-        }
-    }, [config.defaultColors.componentBg]);
+    // Initial Color Sync - Removed redundant effect as useState initializes it.
 
-    const extractPropsFromData = (data: any, mode: 'types' | 'values') => {
+    const extractPropsFromData = (data: Record<string, unknown>, mode: 'types' | 'values') => {
         const extractedProps: {name: string, type: string, color: string}[] = [];
         let count = 0;
         const entries = Object.entries(data);
@@ -113,7 +108,7 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
             y: window.innerHeight / 2 + (Math.random() - 0.5) * 100,
             props,
             createdAt: new Date().toISOString()
-        } as any);
+        });
         
         showToast("Component Created", "success");
         // Reset form or close? Usually keep open for multiple creates if floating, but user might expect close. 
@@ -138,14 +133,14 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
         setProps(newProps);
     };
 
-    const handleJsonImport = (mode: 'types' | 'values', dataObj?: any) => {
+    const handleJsonImport = (mode: 'types' | 'values', dataObj?: Record<string, unknown>) => {
         let data = dataObj;
         
         if (!data) {
              if (!jsonInput.trim()) return;
              try {
                 data = JSON.parse(jsonInput);
-             } catch(e) {
+             } catch {
                  showToast('JSON Parse Error', 'error');
                  return;
              }
@@ -157,13 +152,13 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
                 return;
             }
 
-            const newProps = extractPropsFromData(data, mode);
+            const newProps = extractPropsFromData(data as Record<string, unknown>, mode);
             
             setProps(prev => [...prev, ...newProps]);
             setJsonInput('');
             setShowJsonImport(false);
             showToast(`Imported ${newProps.length} properties via ${mode}`, 'success');
-        } catch (e) {
+        } catch {
             showToast('Processing Error', 'error');
         }
     };
@@ -184,7 +179,7 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
                         return;
                     }
                     
-                    const extractedProps = extractPropsFromData(json, mode);
+                    const extractedProps = extractPropsFromData(json as Record<string, unknown>, mode);
                     
                     const newNode = {
                         id: crypto.randomUUID(),
@@ -194,10 +189,11 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
                         x: 100 + Math.random() * 150,
                         y: 100 + Math.random() * 150,
                         props: extractedProps,
-                        createdAt: new Date().toISOString()
+                        createdAt: new Date().toISOString(),
+                        locked: false
                     };
                     
-                    addNode(newNode as any);
+                    addNode(newNode);
 
                 } catch (err) {
                     console.error(err);

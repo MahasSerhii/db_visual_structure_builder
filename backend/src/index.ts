@@ -1,10 +1,17 @@
 import express from 'express';
+
 import cors from 'cors';
+
 import dotenv from 'dotenv';
+
 import mongoose from 'mongoose';
+
 import http from 'http';
+
 import authRoutes from './routes/auth';
+
 import graphRoutes from './routes/graph';
+
 import { initSocket } from './socket';
 
 dotenv.config();
@@ -35,6 +42,7 @@ mongoose.connection.on('disconnected', () => {
 
 // HTTP Server & Socket.io
 const server = http.createServer(app);
+
 initSocket(server, CLIENT_URL);
 
 // Routes

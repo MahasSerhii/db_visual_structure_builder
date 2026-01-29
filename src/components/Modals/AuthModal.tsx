@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, Lock, UserPlus, LogIn, Globe, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, LogIn, Eye, EyeOff } from 'lucide-react';
+import { SavedProject, UserProfile } from '../../utils/types';
 // Firebase imports removed
 
 
@@ -10,7 +11,7 @@ interface AuthModalProps {
     onClose: () => void;
     initialState: AuthMode;
     initialEmail?: string;
-    onSuccess: (token: string, userEmail: string, userName: string, projects: any[], userProfile?: any) => void;
+    onSuccess: (token: string, userEmail: string, userName: string, projects: SavedProject[], userProfile?: UserProfile) => void;
     inviteToken?: string;
     resetToken?: string;
 }
@@ -22,7 +23,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
     // Prioritize props, but if we have resetToken, we need to extract email or let server validation handle it.
     // Actually, we can decode the resetToken on the client to prefill the email if it's JWT.
     
-    const resolveInitialEmail = () => {
+    const resolveInitialEmail = useCallback(() => {
         if (initialEmail) return initialEmail;
         if (resetToken) {
             try {
@@ -31,10 +32,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                     const payload = JSON.parse(atob(part));
                     return payload.email || '';
                 }
-            } catch(e) {}
+            } catch { /* empty */ }
         }
         return '';
-    };
+    }, [initialEmail, resetToken]);
 
     const [mode, setMode] = useState<AuthMode>(initialState);
     const [email, setEmail] = useState(resolveInitialEmail());
@@ -50,8 +51,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
     // Initial Auto-Init Check using .env - REMOVED
 
     // Config bootstrapping for Social Login (Legacy)
-    const [showConfigInput, setShowConfigInput] = useState(false);
-    const [tempConfig, setTempConfig] = useState('');
+    // const [showConfigInput, setShowConfigInput] = useState(false);
+    // const [tempConfig, setTempConfig] = useState('');
 
     useEffect(() => {
         setMode(initialState);
@@ -59,7 +60,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
         // If not, and we have resetToken, try to decode it again
         const em = resolveInitialEmail();
         if(em) setEmail(em);
-    }, [initialState, initialEmail, isOpen, resetToken]);
+    }, [initialState, initialEmail, isOpen, resetToken, resolveInitialEmail]);
 
     useEffect(() => {
         setError(null);
@@ -68,9 +69,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
 
     if (!isOpen) return null;
 
-    const handleSocialLogin = async (provider: 'google' | 'apple') => {
+    /* const handleSocialLogin = async (provider: 'google' | 'apple') => {
         setError("Social login is currently disabled.");
-    };
+    }; */
 
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -149,7 +150,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                 try {
                     const payload = JSON.parse(atob(resetToken!.split('.')[1]));
                     userEmail = payload.email;
-                } catch(e) {}
+                } catch { /* ignore */ }
                 
                 setTimeout(() => {
                     setMode('LOGIN');

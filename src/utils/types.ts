@@ -1,115 +1,27 @@
-export interface NodeProperty {
-  name: string;
-    type: string;
-    color: string
-}
+import { z } from 'zod';
+import { 
+    NodePropertySchema, NodeDataSchema, EdgeDataSchema, CommentSchema, 
+    CommentReplySchema, UserRoleType as UserRoleTypeEnum, UserSchema, 
+    ActiveSessionUserSchema, SavedProjectSchema, AppSettingsSchema, 
+    UserProfileSchema, TranslationSchema, RoomAccessUserSchema, 
+    LanguageSchema 
+} from './schemas';
 
-export interface NodeData {
-  id: string;
-  title: string;
-  description?: string;
-  color: string;
-  x: number;
-  y: number;
-  props?: NodeProperty[];
-  docLink?: string;
-  locked?: boolean;
-  fx?: number | null;
-  fy?: number | null;
-  createdAt: string;
-  
-}
+// Re-export Enums
+export { UserRoleTypeEnum as UserRoleType };
 
-export interface EdgeData {
-  id: string;
-  source: string; // Node ID
-  target: string; // Node ID
-  label?: string;
-  sourceProp?: string;
-  targetProp?: string;
-  color?: string;
-  strokeColor?: string; // Add this for consistency
-  strokeWidth?: number;
-  strokeType?: 'solid' | 'dashed' | 'dotted';
-  relationType?: '1:1' | '1:n';
-  labelRotation?: number; 
-}
+// Infer Types from Zod Schemas
+export type NodeProperty = z.infer<typeof NodePropertySchema>;
+export type NodeData = z.infer<typeof NodeDataSchema>;
+export type EdgeData = z.infer<typeof EdgeDataSchema>;
+export type Comment = z.infer<typeof CommentSchema>;
+export type CommentReply = z.infer<typeof CommentReplySchema>;
+export type User = z.infer<typeof UserSchema>;
+export type ActiveSessionUser = z.infer<typeof ActiveSessionUserSchema>;
+export type SavedProject = z.infer<typeof SavedProjectSchema>;
+export type AppSettings = z.infer<typeof AppSettingsSchema>;
+export type UserProfile = z.infer<typeof UserProfileSchema>;
+export type Translation = z.infer<typeof TranslationSchema>;
+export type RoomAccessUser = z.infer<typeof RoomAccessUserSchema>;
+export type Language = z.infer<typeof LanguageSchema>;
 
-export interface Comment {
-    id: string;
-    x: number;
-    y: number;
-    content: string;
-    author: {
-        name: string;
-        color: string;
-    };
-    targetId?: string; // Node ID or Edge ID
-    targetType?: 'node' | 'edge' | 'canvas';
-    isResolved?: boolean;
-    replies?: CommentReply[];
-    createdAt: number;
-}
-
-export interface CommentReply {
-    id: string;
-    content: string;
-    author: {
-        name: string;
-        color: string;
-    };
-    createdAt: number;
-}
-
-export enum UserRoleType {
-    HOST = 'host',
-    OWNER = 'owner',
-    ADMIN = 'admin',
-    EDITOR = 'editor',
-    RW = 'rw',
-    VIEWER = 'viewer',
-    R = 'r',
-    GUEST = 'guest'
-}
-
-export interface User {
-  id: string; // email or uid
-  name: string;
-  color: string;
-  role?: string;
-  lastActive: number;
-  visible?: boolean;
-}
-
-export interface SavedProject {
-  id: string;
-  name: string;
-  author: string;
-  url: string;
-  configStr: string;
-  lastAccessed: number;
-  role?: 'host' | 'guest' | 'admin';
-}
-
-export interface AppSettings {
-  language: string;
-  theme: 'light' | 'dark';
-  // userProfile removed - now stored in separate local state
-  defaultColors: {
-    componentBg: string;
-    propertyText: string;
-    canvasBg?: string;
-  };
-}
-
-export interface UserProfile {
-    name: string;
-    color: string;
-    lastUpdated?: number;
-}
-
-export interface Translation {
-  [key: string]: string;
-}
-
-export type Language = 'en' | 'ua' | 'cz' | 'fr' | 'bg' | 'de' | 'es';

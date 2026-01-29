@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useGraph } from '../../context/GraphContext';
-import { X, CheckCircle, Circle, MessageSquare, ChevronRight, GripVertical } from 'lucide-react';
+import { X, CheckCircle, Circle, MessageSquare, GripVertical } from 'lucide-react';
 
 interface CommentsListModalProps {
     onClose: () => void;
 }
 
 export const CommentsListModal: React.FC<CommentsListModalProps> = ({ onClose }) => {
-    const { comments, updateComment, activeCommentId, setActiveCommentId, t } = useGraph();
+    const { comments, updateComment, setActiveCommentId, t } = useGraph();
     const [filter, setFilter] = useState<'unresolved' | 'resolved'>('unresolved');
     const [search, setSearch] = useState('');
     

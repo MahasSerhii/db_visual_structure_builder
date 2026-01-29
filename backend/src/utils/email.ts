@@ -1,5 +1,7 @@
 import nodemailer from 'nodemailer';
+
 import dotenv from 'dotenv';
+
 dotenv.config();
 
 const createTransporter = () => {
@@ -41,10 +43,12 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
             console.log("--------------------------------------\n");
             // If it contains a link, print it clearly for the user to click
             const linkMatch = html.match(/href="([^"]*)"/);
+
             if (linkMatch && linkMatch[1]) {
                 console.log(`[ACTION LINK]: ${linkMatch[1]}`);
             }
             console.log("======================================================\n");
+
             return;
         }
 
@@ -54,6 +58,7 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
             subject,
             html
         });
+
         console.log(`[Email Service] Sent to ${to} | ID: ${info.messageId}`);
     } catch (e) {
         console.error("[Email Service] Failed:", e);

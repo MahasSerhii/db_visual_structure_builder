@@ -1,10 +1,4 @@
-import React from 'react';
 import './LoadingKitty.css';
-
-interface LoadingKittyProps {
-    size?: number;
-    color?: string; // Color for the line
-}
 
 export const LoadingKitty = ({ size = 64, color = '#4A5568' }) => {
       const darkColor = '#2D3748';

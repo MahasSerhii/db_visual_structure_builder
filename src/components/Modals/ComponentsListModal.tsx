@@ -67,8 +67,8 @@ export const ComponentsListModal: React.FC<ComponentsListModalProps> = ({ onClos
     }, [nodes, search]);
 
     const getDependencies = (nodeId: string) => {
-        const deps_outgoing = edges.filter(e => (typeof e.source === 'object' ? (e.source as any).id : e.source) === nodeId);
-        const deps_incoming = edges.filter(e => (typeof e.target === 'object' ? (e.target as any).id : e.target) === nodeId);
+        const deps_outgoing = edges.filter(e => (typeof e.source === 'object' ? (e.source as {id: string}).id : e.source) === nodeId);
+        const deps_incoming = edges.filter(e => (typeof e.target === 'object' ? (e.target as {id: string}).id : e.target) === nodeId);
         return { outgoing: deps_outgoing, incoming: deps_incoming };
     };
 
@@ -144,7 +144,7 @@ export const ComponentsListModal: React.FC<ComponentsListModalProps> = ({ onClos
                                 {search && hasDeps && (
                                     <div className="border-t border-gray-100 bg-gray-50/50 p-2 text-xs space-y-1 dark:border-slate-700 dark:bg-slate-900/50">
                                         {outgoing.map(e => {
-                                            const targetId = typeof e.target === 'object' ? (e.target as any).id : e.target;
+                                            const targetId = typeof e.target === 'object' ? (e.target as {id: string}).id : e.target;
                                             const targetNode = nodes.find(n => n.id === targetId);
                                             return (
                                                 <div key={e.id} className="flex items-center gap-1 text-gray-500 pl-2 border-l-2 border-indigo-200 ml-1 dark:text-gray-400 dark:border-indigo-700">
@@ -155,7 +155,7 @@ export const ComponentsListModal: React.FC<ComponentsListModalProps> = ({ onClos
                                             )
                                         })}
                                          {incoming.map(e => {
-                                            const sourceId = typeof e.source === 'object' ? (e.source as any).id : e.source;
+                                            const sourceId = typeof e.source === 'object' ? (e.source as {id: string}).id : e.source;
                                             const sourceNode = nodes.find(n => n.id === sourceId);
                                             return (
                                                 <div key={e.id} className="flex items-center gap-1 text-gray-500 pl-2 border-l-2 border-orange-200 ml-1">

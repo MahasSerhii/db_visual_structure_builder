@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { NodeData, EdgeData, AppSettings } from '../../utils/types';
-import { ChevronRight, ArrowLeftRight, Save, Database, AlertCircle, Plus, Trash2, Edit2, ChevronDown, ChevronUp, Check, X, ArrowRight, Copy, ArrowLeft } from 'lucide-react';
+import React, { useState, useMemo  } from 'react';
+import { NodeData, EdgeData, AppSettings, Comment } from '../../utils/types';
+import { ChevronRight, ArrowLeftRight, Trash2, Edit2, ChevronDown, Check, ArrowRight, ArrowLeft } from 'lucide-react';
 
 interface SyncConflictModalProps {
     isOpen: boolean;
     onClose: () => void;
-    localData: { nodes: NodeData[], edges: EdgeData[], comments: any[], config?: AppSettings };
-    remoteData: { nodes: NodeData[], edges: EdgeData[], comments: any[], config?: AppSettings };
-    onResolve: (action: 'push_local' | 'pull_remote' | 'merge', mergedData?: { nodes: NodeData[], edges: EdgeData[], comments: any[] }) => void;
+    localData: { nodes: NodeData[], edges: EdgeData[], comments: Comment[], config?: AppSettings };
+    remoteData: { nodes: NodeData[], edges: EdgeData[], comments: Comment[], config?: AppSettings };
+    onResolve: (action: 'push_local' | 'pull_remote' | 'merge', mergedData?: { nodes: NodeData[], edges: EdgeData[], comments: Comment[] }) => void;
 }
 
 const normalizeNode = (n: NodeData) => {
@@ -23,13 +23,9 @@ const normalizeNode = (n: NodeData) => {
 };
 
 export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({ 
-    isOpen, onClose, localData, remoteData, onResolve
+    isOpen, localData, remoteData, onResolve
 }) => {
-    // State to track merged decisions
-    // Map<NodeId, NodeData | null> -> null means deleted/excluded
-    const [mergedNodes, setMergedNodes] = useState<Map<string, NodeData | null>>(new Map());
-    const [openAccordions, setOpenAccordions] = useState<Set<string>>(new Set());
-
+    
     // Diff Calculation
     const { allIds, nodeStatus, conflictIds } = useMemo(() => {
         if (!isOpen) return { allIds: [], nodeStatus: new Map(), conflictIds: [] };
@@ -74,25 +70,33 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
         return { allIds: all, nodeStatus: status, conflictIds: conflicts };
     }, [localData, remoteData, isOpen]);
 
-    // Initialize Merged State
-    useEffect(() => {
-        if (isOpen) {
-            const initialMap = new Map<string, NodeData | null>();
-            // Default strategy: Keep Local for conflicts? Or Unset?
-            // Let's default to Local for simple resolution flow
-            allIds.forEach(id => {
-                const l = localData.nodes.find(n => n.id === id);
-                if (l) initialMap.set(id, l);
-                else {
-                    const r = remoteData.nodes.find(n => n.id === id);
-                    if (r) initialMap.set(id, r); // If missing locally, invoke remote
-                }
-            });
-            setMergedNodes(initialMap);
-            // Auto open conflicts
-            setOpenAccordions(new Set(conflictIds));
-        }
-    }, [isOpen, allIds, conflictIds]);
+    // State to track merged decisions
+    // Map<NodeId, NodeData | null> -> null means deleted/excluded
+    const [mergedNodes, setMergedNodes] = useState<Map<string, NodeData | null>>(() => {
+         const initialMap = new Map<string, NodeData | null>();
+         // logic duplicated need to be wary if allIds not available but it is
+         // Wait, useMemo runs on render. Hook init runs once. 
+         // If we rely on allIds being populated by useMemo in the same pass, it works because we lifted useMemo.
+         // Effectively this runs logic once.
+         
+         // However, creating 'allIds' logic again might be safer if useMemo returns undefined on first pass (it doesn't).
+         // Actually, let's just use the logic directly or reuse the collection if possible.
+         // Since we can't easily reuse the exact 'allIds' array from the const declaration inside the useState initializer if they are in the same scope block?
+         // Yes we can, 'allIds' is in scope.
+         
+         if (!allIds) return initialMap; // Safety
+         allIds.forEach(id => {
+            const l = localData.nodes.find(n => n.id === id);
+            if (l) initialMap.set(id, l);
+            else {
+                const r = remoteData.nodes.find(n => n.id === id);
+                if (r) initialMap.set(id, r); 
+            }
+        });
+        return initialMap;
+    });
+
+    const [openAccordions, setOpenAccordions] = useState<Set<string>>(() => new Set(conflictIds));
 
     const toggleAccordion = (id: string) => {
         const newSet = new Set(openAccordions);
@@ -115,7 +119,7 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
         setMergedNodes(newMap);
     };
 
-    const updateMergedProp = (id: string, prop: keyof NodeData | 'props', value: any) => {
+    const updateMergedProp = <K extends keyof NodeData>(id: string, prop: K, value: NodeData[K]) => {
         const current = mergedNodes.get(id);
         if (!current) return;
         
@@ -142,8 +146,8 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
         const uniqueEdges = Array.from(new Map(allEdges.map(e => [e.id, e])).values());
         
         const finalEdges = uniqueEdges.filter(e => {
-             const s = typeof e.source === 'object' ? (e.source as any).id : e.source;
-             const t = typeof e.target === 'object' ? (e.target as any).id : e.target;
+             const s = typeof e.source === 'object' ? (e.source as {id: string}).id : e.source;
+             const t = typeof e.target === 'object' ? (e.target as {id: string}).id : e.target;
              return validNodeIds.has(s) && validNodeIds.has(t);
         });
 

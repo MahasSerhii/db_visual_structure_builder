@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { NodeData, EdgeData } from '../../utils/types';
-import { X, Trash2, Plus, Lock, Unlock, Copy, ExternalLink, ArrowRight, Unplug, Edit2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { NodeData } from '../../utils/types';
+import { X, Trash2, Plus, Lock, Unlock, Copy, ArrowRight, Unplug, Edit2 } from 'lucide-react';
 import { useGraph } from '../../context/GraphContext';
 import { EditEdgeModal } from './EditEdgeModal';
 
@@ -22,17 +22,10 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
     const [activeTab, setActiveTab] = useState<'properties' | 'connections'>('properties');
     const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
 
-    useEffect(() => {
-        setTitle(node.title);
-        setColor(node.color);
-        setProps(node.props || []);
-        setLocked(node.locked || false);
-    }, [node]);
-
     const nodeEdges = useMemo(() => {
         return edges.filter(e => 
-            (typeof e.source === 'object' ? (e.source as any).id === node.id : e.source === node.id) || 
-            (typeof e.target === 'object' ? (e.target as any).id === node.id : e.target === node.id)
+            (typeof e.source === 'object' ? (e.source as {id: string}).id === node.id : e.source === node.id) || 
+            (typeof e.target === 'object' ? (e.target as {id: string}).id === node.id : e.target === node.id)
         );
     }, [edges, node.id]);
 
@@ -78,8 +71,10 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
     };
 
     // Helper to resolve node title from ID
-    const getNodeTitle = (id: string | any) => {
-        const resolvedId = typeof id === 'object' ? id.id : id;
+    const getNodeTitle = (id: string | { id: string } | unknown): string => {
+        const resolvedId = (typeof id === 'object' && id !== null && 'id' in (id as Record<string, unknown>)) 
+            ? (id as { id: string }).id 
+            : id as string;
         const n = nodes.find(x => x.id === resolvedId);
         return n ? n.title : resolvedId;
     };
@@ -212,8 +207,8 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                                 ) : (
                                     nodeEdges.map(edge => {
                                         // Resolve actual objects (or IDs if objects not hydrated)
-                                        const sId = typeof edge.source === 'object' ? (edge.source as any).id : edge.source;
-                                        const tId = typeof edge.target === 'object' ? (edge.target as any).id : edge.target;
+                                        const sId = typeof edge.source === 'object' ? (edge.source as {id: string}).id : edge.source;
+                                        const tId = typeof edge.target === 'object' ? (edge.target as {id: string}).id : edge.target;
                                         const isSource = sId === node.id;
                                         const otherId = isSource ? tId : sId;
                                         const otherTitle = getNodeTitle(otherId);
@@ -253,32 +248,31 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
                                                     </div>
                                                     <div className="flex gap-2">
                                                         <button 
-                                                            onClick={(e) => {
-                                                                 const otherNodeId = typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source);
-                                                                 const otherNode = nodes.find(n => n.id === otherNodeId);
+                                                            onClick={() => {
+                                                                 // Simplified logic using already resolved otherId
+                                                                 const otherNode = nodes.find(n => n.id === otherId);
                                                                  const isEdgeLocked = locked || (otherNode?.locked);
                                                                  
                                                                  if(isEdgeLocked) return;
                                                                  setEditingEdgeId(edge.id);
                                                             }} 
-                                                            disabled={locked || nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source)))?.locked}
-                                                            className={`p-1.5 rounded border border-gray-200 transition ${(locked || nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source)))?.locked) ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50'}`}
+                                                            disabled={locked || nodes.find(n => n.id === otherId)?.locked}
+                                                            className={`p-1.5 rounded border border-gray-200 transition ${(locked || nodes.find(n => n.id === otherId)?.locked) ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50'}`}
                                                             title={locked ? t('edit.lock.locked') : t('edit.conn.edit')}
                                                         >
                                                             <Edit2 size={14} />
                                                         </button>
                                                         <button 
-                                                            onClick={(e) => {
-                                                                const otherNodeId = typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source);
-                                                                const otherNode = nodes.find(n => n.id === otherNodeId);
+                                                            onClick={() => {
+                                                                const otherNode = nodes.find(n => n.id === otherId);
                                                                 const isEdgeLocked = locked || (otherNode?.locked);
 
                                                                 if(!isEdgeLocked && confirm(t('edit.conn.disconnect.confirm'))) {
                                                                     deleteEdge(edge.id);
                                                                 }
                                                             }}
-                                                            disabled={locked || nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source)))?.locked}
-                                                            className={`p-1.5 rounded border border-gray-200 transition ${(locked || nodes.find(n => n.id === (typeof edge.source === 'object' ? (edge.source as any).id : edge.source === node.id ? (typeof edge.target === 'object' ? (edge.target as any).id : edge.target) : (typeof edge.source === 'object' ? (edge.source as any).id : edge.source)))?.locked) ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50'}`}
+                                                            disabled={locked || nodes.find(n => n.id === otherId)?.locked}
+                                                            className={`p-1.5 rounded border border-gray-200 transition ${(locked || nodes.find(n => n.id === otherId)?.locked) ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50'}`}
                                                             title={locked ? t('edit.lock.locked') : t('edit.conn.disconnect')}
                                                         >
                                                             <Unplug size={14} />
@@ -309,6 +303,7 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
             {/* Nested Modal for Edge Editing */}
             {editingEdgeId && (
                 <EditEdgeModal 
+                    key={editingEdgeId}
                     isOpen={!!editingEdgeId} 
                     edgeId={editingEdgeId} 
                     onClose={() => setEditingEdgeId(null)} 

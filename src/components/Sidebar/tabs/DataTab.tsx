@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGraph } from '../../../context/GraphContext';
 import { useToast } from '../../../context/ToastContext';
-import { NodeData, EdgeData } from '../../../utils/types';
+import { NodeData, EdgeData, Comment, AppSettings, RoomAccessUser } from '../../../utils/types';
 // Firebase imports removed
 
 import { CSVModal } from '../../Modals/CSVModal';
@@ -13,7 +13,6 @@ import { ClearGraphModal } from '../../Modals/ClearGraphModal';
 
 
 import { dbOp } from '../../../utils/indexedDB';
-import { LoadingKitty } from '../../UI/LoadingKitty';
 // FirebaseConfigSection import removed
 
 import { RoomConnectionSection } from './DataTabParts/RoomConnectionSection';
@@ -21,7 +20,8 @@ import { TeamInviteSection } from './DataTabParts/TeamInviteSection';
 import { ActiveUsersList } from './DataTabParts/ActiveUsersList';
 import { DataActionsSection } from './DataTabParts/DataActionsSection';
 import { downloadJSON, processImportFile, wipeDatabase } from '../../../utils/dataTabUtils';
-import { uploadFullGraphToBackend, api } from '../../../utils/api';
+// import { uploadFullGraphToBackend, api } from '../../../utils/api';
+import { graphApi } from '../../../api/graph';
 
 
 
@@ -51,7 +51,7 @@ export const DataTab: React.FC = () => {
     const [isClearGraphModalOpen, setClearGraphModalOpen] = useState(false);
     
     // Room Access Management
-    const [roomAccessUsers, setRoomAccessUsers] = useState<any[]>([]);
+    const [roomAccessUsers, setRoomAccessUsers] = useState<RoomAccessUser[]>([]);
     const [isRemoveUserConfirmOpen, setIsRemoveUserConfirmOpen] = useState(false);
     const [isLeaveRoomConfirmOpen, setIsLeaveRoomConfirmOpen] = useState(false);
     const [userToRemove, setUserToRemove] = useState<{ accessId: string; name: string } | null>(null);
@@ -75,9 +75,7 @@ export const DataTab: React.FC = () => {
         return (!!p.get('config') && !!p.get('room')) || !!p.get('token');
     });
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-    const [rememberMe, setRememberMe] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
-    const [configError, setConfigError] = useState<string | null>(null);
     const [linkAllowEdit, setLinkAllowEdit] = useState(true);
     const hasShownErrorToast = useRef(false);
     const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
@@ -85,7 +83,7 @@ export const DataTab: React.FC = () => {
     // Sync Conflict State
     const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
     const [isDisconnectModalOpen, setIsDisconnectModalOpen] = useState(false);
-    const [pendingRemoteData, setPendingRemoteData] = useState<any>(null);
+    const [pendingRemoteData, setPendingRemoteData] = useState<{ nodes: NodeData[], edges: EdgeData[], comments: Comment[], config: AppSettings } | null>(null);
 
     // Auth State
     const [inviteEmail, setInviteEmail] = useState('');
@@ -111,7 +109,7 @@ export const DataTab: React.FC = () => {
     // Handle Link Auto-Connect & Token Ops
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const configParam = params.get('config');
+        // const configParam = params.get('config');
         const roomParam = params.get('room');
         const permParam = params.get('p');
         const tokenParam = params.get('token');
@@ -163,7 +161,9 @@ export const DataTab: React.FC = () => {
                                     // But handleConnect will run after this returns.
                                     return;
                                 }
-                            } catch(e) {}
+                            } catch {
+                                // Ignore invalid token
+                            }
                         }
 
                         setAuthModalEmail(data.email);
@@ -192,14 +192,14 @@ export const DataTab: React.FC = () => {
             try {
                 const decodedRoom = atob(roomParam);
                 if (/^[\x20-\x7E]+$/.test(decodedRoom)) targetRoomId = decodedRoom;
-            } catch(e) { targetRoomId = roomParam; }
+            } catch { targetRoomId = roomParam; }
 
             setIsClientMode(true); 
             setRoomId(targetRoomId);
 
             if (permParam === 'r') setReadOnly(true);
         }
-    }, [isConnected]); 
+    }, [isConnected, setIsClientMode, setReadOnly, showToast]); 
 
 
     // Auto-Connect Effect
@@ -230,6 +230,7 @@ export const DataTab: React.FC = () => {
             }
         }, 300);
         return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [roomId, isClientMode, isConnected, isConnecting]);
 
 
@@ -247,7 +248,7 @@ export const DataTab: React.FC = () => {
                  hasShownErrorToast.current = true;
              }
         }
-    }, [isConnected, isLiveMode]);
+    }, [isConnected, isLiveMode, showToast]);
 
     const toggleInvisible = () => {
         toggleUserVisibility();
@@ -295,9 +296,10 @@ export const DataTab: React.FC = () => {
             setInviteEmail('');
             // Refresh access list to show the new pending user
             fetchRoomAccessUsers();
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
-            showToast(e.message || "Failed to send invite", "error");
+            const msg = e instanceof Error ? e.message : String(e);
+            showToast(msg || "Failed to send invite", "error");
         } finally {
             setIsInviting(false);
         }
@@ -319,17 +321,17 @@ export const DataTab: React.FC = () => {
                 })
             });
             showToast("Check your email for the login link", "info");
-        } catch (e) {
+        } catch {
             showToast("Login request failed. Are you invited?", "error");
         } finally {
             setIsLoggingIn(false);
         }
     };
 
-    const handleLogout = async () => {
-        await handleDisconnect();
-        logout();
-    };
+    // const handleLogout = async () => {
+    //    await handleDisconnect();
+    //    logout();
+    // };
 
     // ... (rest of the file hooks)
 
@@ -340,27 +342,23 @@ export const DataTab: React.FC = () => {
             try { 
                 const part = authToken.split('.')[1];
                 if(part) email = JSON.parse(atob(part)).email; 
-            } catch(e){}
+            } catch { /* ignore */ }
             
             if(!email) return;
 
             // Best effort save to backend
-            await fetch(`${API_URL}/save-project`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email,
-                    project: {
-                        id: targetRoomId,
-                        name: `Project ${targetRoomId.substring(0,6)}`,
-                        configStr: '', // Legacy
-                        author: userProfile.name,
-                        url: window.location.origin + window.location.pathname,
-                        role: role || (isClientMode ? 'guest' : 'host') // Explicitly send role
-                    }
-                })
+            await graphApi.saveProject({
+                email,
+                project: {
+                    id: targetRoomId,
+                    name: `Project ${targetRoomId.substring(0,6)}`,
+                    configStr: '', // Legacy
+                    author: userProfile.name,
+                    url: window.location.origin + window.location.pathname,
+                    role: role || (isClientMode ? 'guest' : 'host') // Explicitly send role
+                }
             });
-        } catch(e) { console.warn("Backend Sync Failed", e); }
+        } catch(e: unknown) { console.warn("Backend Sync Failed", e); }
     };
 
 
@@ -431,14 +429,14 @@ export const DataTab: React.FC = () => {
                  const p = JSON.parse(atob(effectiveToken.split('.')[1]));
                  authEmail = p.email;
             }
-        } catch(e) {}
+        } catch { /* ignore */ }
         
         if (authEmail) {
             userId = authEmail;
             // Sync Auth ID to storage to ensure UI matching
             if(userId){
             localStorage.setItem('my_user_id', userId);
-            if (isClientMode) sessionStorage.setItem('client_uid', userId)};
+            if (isClientMode) sessionStorage.setItem('client_uid', userId)}
         } else if (!userId) {
             userId = (isClientMode ? 'guest_' : 'user_') + Math.random().toString(36).substr(2, 9);
             if (isClientMode) sessionStorage.setItem('client_uid', userId);
@@ -447,20 +445,15 @@ export const DataTab: React.FC = () => {
 
         // Determine Identity & Role
         let role: 'host' | 'guest' = isClientMode ? 'guest' : 'host'; // Default
-        let displayName = userProfile.name;
 
         // Verify Access & Role from Backend
         if (effectiveToken && roomId) {
             try {
                 // We should ideally await this, but handleConnect is already async.
-                const res = await fetch(`${API_URL}/verify-access`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: effectiveToken, roomId })
-                });
-                const verification = await res.json();
+                const verification = await graphApi.verifyAccess({ token: effectiveToken, roomId });
+                
                 if (verification.allowed) {
-                    role = verification.role || role; // 'host' or 'guest' from DB
+                    role = (verification.role as 'host' | 'guest') || role; // 'host' or 'guest' from DB
                     // Correctly update UI Mode
                     if (role === 'host') {
                          setIsClientMode(false); 
@@ -480,27 +473,26 @@ export const DataTab: React.FC = () => {
         // 404 Check / Create Project
         try {
             // Check Room Existence (Just peek)
-            await api.get(`/graph/${roomId}`); 
-        } catch (fetchErr: any) {
+            await graphApi.getGraph(roomId); 
+        } catch (fetchErr) {
+            const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
             // Check if it's an access denied error
-            if (fetchErr.message && (fetchErr.message.includes('403') || fetchErr.message.includes('NO_ACCESS'))) {
+            if (msg && (msg.includes('403') || msg.includes('NO_ACCESS'))) {
                 setIsConnecting(false);
                 showToast("You don't have access to this room. Please contact the author.", "error");
                 return;
             }
             
-            if (fetchErr.message && (fetchErr.message.includes('404') || fetchErr.message.includes('Project not found') || fetchErr.message.includes('Cannot GET'))) {
+            if (msg && (msg.includes('404') || msg.includes('Project not found') || msg.includes('Cannot GET'))) {
                 console.log("Room not found, creating new room:", roomId);
                 try {
-                    const initRes = await api.post('/graph/init', { 
+                    await graphApi.initGraph({ 
                         roomId, 
                         name: `Project ${roomId}`,
                         config: config
                     });
-                    if (initRes.success) {
-                        showToast("New Project Room Created!", "success");
-                    }
-                } catch (createErr: any) {
+                    showToast("New Project Room Created!", "success");
+                } catch {
                     setIsConnecting(false);
                     showToast("Failed to initialize room", "error");
                     return;
@@ -511,14 +503,14 @@ export const DataTab: React.FC = () => {
             }
         }
 
-        const userObj = {
+        /* const userObj = {
             id: userId!, 
             name: displayName ,
             color: userProfile.color,
             lastActive: Date.now(),
             role: role,
             visible: isUserVisible
-        };
+        }; */
 
         // Update Context to trigger Socket Connection & Data Loading
         setCurrentRoomId(roomId);
@@ -574,7 +566,7 @@ export const DataTab: React.FC = () => {
         if (isClientMode) {
             await wipeDatabase();
             
-            try { await refreshData(); } catch(e) {}
+            try { await refreshData(); } catch { /* ignore */ }
 
              localStorage.clear();
              // Clean Redirect to remove query params to prevent auto-client-mode re-entry
@@ -599,9 +591,9 @@ export const DataTab: React.FC = () => {
          // If connected to a room, try to delete it remotely
          if (isConnected && roomId && !isClientMode) {
              try {
-                 await api.delete(`/graph/${roomId}`);
+                 await graphApi.deleteGraph(roomId);
                  showToast("Remote Project Deleted", "success");
-             } catch (e: any) {
+             } catch (e) {
                  console.error("Delete Failed", e);
                  // Proceed to local wipe anyway
              }
@@ -672,9 +664,9 @@ export const DataTab: React.FC = () => {
             } else {
                 throw new Error("No link returned from server");
             }
-        } catch (e: any) {
+        } catch (e) {
                 console.error(e);
-                showToast(e.message, "error");
+                showToast(e instanceof Error ? e.message : String(e), "error");
         }
     };
 
@@ -717,20 +709,20 @@ export const DataTab: React.FC = () => {
 
              try {
                  // Fetch data manually to check for conflicts (Cache-busted)
-                 const data = await api.get(`/graph/${roomId}?t=${Date.now()}`);
+                 const data = await graphApi.getGraph(`${roomId}?t=${Date.now()}`);
                  
                  const rNodes = data?.nodes || [];
                  const rEdges = data?.edges || [];
                  const rComments = data?.comments || [];
                  
                  // Construct minimal config from remote project settings
-                 const rConfig = data.project?.config || {};
+                 const rConfig = data.project?.config || {} as AppSettings;
 
                  // Normalization for comparison: Sort by ID and remove metadata + normalize nulls
-                 const clean = (arr: any[]) => arr.map(item => {
-                     const { id, x, y, title, description, color, props, source, target } = item;
+                 const clean = (arr: Array<NodeData | EdgeData>) => arr.map(item => {
+                     const { id, x, y, title, description, color, props, source, target } = item as Partial<NodeData & EdgeData>;
                      return {
-                         id, 
+                         id: id!, 
                          x, 
                          y, 
                          // Normalize null/undefined to consistent undefined so JSON.stringify drops them
@@ -777,13 +769,13 @@ export const DataTab: React.FC = () => {
                  } else {
                      // No conflict, safe to sync
                      // Push local config if we are "winning" or it's empty
-                     await uploadFullGraphToBackend(roomId, nodes, edges, comments, true, config);
+                     await graphApi.syncGraph(roomId, { nodes, edges, comments, config }, true);
                      showToast("Live Sync Enabled", "success");
                      setLiveMode(true);
                  }
-             } catch(e: any) {
+             } catch(e: unknown) {
                  console.error("Live Check Error", e);
-                 const msg = e.message || String(e);
+                 const msg = e instanceof Error ? e.message : String(e);
 
                  // Fix: Don't enter live mode if Authorization is the issue
                  if (msg.includes('Unauthorized') || msg.includes('Invalid Token') || msg.includes('User not found') || msg.includes('jwt expired')) {
@@ -827,14 +819,14 @@ export const DataTab: React.FC = () => {
         }
     };
     
-    const resolveSync = async (action: 'push_local' | 'pull_remote' | 'merge', mergedData?: { nodes: NodeData[], edges: EdgeData[], comments: any[] }) => {
+    const resolveSync = async (action: 'push_local' | 'pull_remote' | 'merge', mergedData?: { nodes: NodeData[], edges: EdgeData[], comments: Comment[] }) => {
         setIsSyncModalOpen(false);
         setIsConnecting(true);
         setTransitioningToLive(true);
         
         try {
             if (action === 'push_local') {
-                await uploadFullGraphToBackend(roomId, nodes, edges, comments, true, config);
+                await graphApi.syncGraph(roomId, { nodes, edges, comments, config }, true);
                 showToast("Local data pushed to Live Room", "success");
             } else if (action === 'merge' && mergedData) {
                  const { nodes: n, edges: e, comments: c } = mergedData;
@@ -845,7 +837,7 @@ export const DataTab: React.FC = () => {
                  
                  // 2. Push to Backend (Source of Truth)
                  // Critical: Ensure backend is updated BEFORE we go live to prevent stale data pull
-                 await uploadFullGraphToBackend(roomId, n, e, c, true, config);
+                 await graphApi.syncGraph(roomId, { nodes: n, edges: e, comments: c, config }, true);
                  
                  showToast("Merged data synced successfully", "success");
 
@@ -857,8 +849,8 @@ export const DataTab: React.FC = () => {
                     setGraphData(n, e, c);
                     
                     // Update Config
-                    if (cfg && cfg.backgroundColor) {
-                        updateProjectBackground(cfg.backgroundColor);
+                    if (cfg && cfg.defaultColors.canvasBg) {
+                        updateProjectBackground(cfg.defaultColors.canvasBg);
                     }
                     if (cfg) {
                          // Merge other config if specific fields exist
@@ -871,7 +863,7 @@ export const DataTab: React.FC = () => {
             }
             setLiveMode(true);
             setLastSyncTime(new Date());
-        } catch (e) {
+        } catch {
             showToast("Sync failed", "error");
         } finally {
             setIsConnecting(false);
@@ -918,22 +910,22 @@ export const DataTab: React.FC = () => {
             if (isLiveMode) {
                 try {
                     // Read fresh data from DB because 'nodes' in closure is stale
-                    const n = await dbOp('nodes', 'readonly', 'getAll') as any[];
-                    const e = await dbOp('edges', 'readonly', 'getAll') as any[];
-                    const c = await dbOp('comments', 'readonly', 'getAll') as any[];
+                    const n = await dbOp('nodes', 'readonly', 'getAll') as NodeData[];
+                    const e = await dbOp('edges', 'readonly', 'getAll') as EdgeData[];
+                    const c = await dbOp('comments', 'readonly', 'getAll') as Comment[];
                     
                     if (n.length === 0 && e.length === 0) {
                         console.warn("Import warning: IDB returned empty arrays immediately after import.");
                         // Retry once if needed? Or maybe the file was empty.
                     }
 
-                    await uploadFullGraphToBackend(roomId, n, e, c, true);
+                    await graphApi.syncGraph(roomId, { nodes: n, edges: e, comments: c }, true);
                     
                     // NOW refresh from server (which should contain the data we just pushed)
                     await refreshData(true);
                     
                     showToast("Imported & Synced to Live Room", "success");
-                } catch(err) {
+                } catch(err: unknown) {
                     console.error("Import Sync Failed", err);
                     showToast("Imported locally but failed to sync remote", "warning");
                     // Ensure we at least see the local data
@@ -964,21 +956,7 @@ export const DataTab: React.FC = () => {
             if (clearLive && isLiveMode && currentRoomId) {
                 // Clear from backend (live room)
                 try {
-                    const response = await fetch(
-                        `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/graph/clear-room`,
-                        {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
-                            },
-                            body: JSON.stringify({ roomId: currentRoomId })
-                        }
-                    );
-
-                    if (!response.ok) {
-                        throw new Error('Failed to clear live graph');
-                    }
+                    await graphApi.clearRoom(currentRoomId);
 
                     // Refresh data from backend to reflect the clearing
                     await refreshData(true);
@@ -998,28 +976,16 @@ export const DataTab: React.FC = () => {
     };
 
     // Fetch room access users (only for project author)
-    const fetchRoomAccessUsers = async () => {
+    const fetchRoomAccessUsers = React.useCallback(async () => {
         if (!isLiveMode || !currentRoomId || isClientMode) return;
 
         try {
-            const response = await fetch(
-                `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/graph/${currentRoomId}/access`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
-                    }
-                }
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                setRoomAccessUsers(data.users || []);
-            }
+            const data = await graphApi.getAccess(currentRoomId);
+            setRoomAccessUsers(data.users || []);
         } catch (err) {
             console.error("Failed to fetch room access users", err);
         }
-    };
+    }, [isLiveMode, currentRoomId, isClientMode]);
 
     // Handle removing user from room
     const handleRemoveUserFromRoom = async (accessId: string, userName: string) => {
@@ -1032,24 +998,10 @@ export const DataTab: React.FC = () => {
         if (!userToRemove || !currentRoomId) return;
 
         try {
-            const response = await fetch(
-                `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/graph/${currentRoomId}/access/${userToRemove.accessId}`,
-                {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
-                    }
-                }
-            );
-
-            if (response.ok) {
-                showToast(`${userToRemove.name} has been removed from the project`, "success");
-                // Refresh the access list
-                await fetchRoomAccessUsers();
-            } else {
-                const error = await response.json();
-                showToast(error.error || "Failed to remove user", "error");
-            }
+            await graphApi.removeAccess(currentRoomId, userToRemove.accessId);
+            showToast(`${userToRemove.name} has been removed from the project`, "success");
+            // Refresh the access list
+            await fetchRoomAccessUsers();
         } catch (err) {
             console.error("Error removing user", err);
             showToast("Failed to remove user from project", "error");
@@ -1068,23 +1020,9 @@ export const DataTab: React.FC = () => {
         if (!userToRemove || !currentRoomId) return;
 
         try {
-            const response = await fetch(
-                `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/graph/${currentRoomId}/access/${userToRemove.accessId}`,
-                {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
-                    }
-                }
-            );
-
-            if (response.ok) {
-                showToast("You have left the room", "success");
-                handleDisconnect();
-            } else {
-                const error = await response.json();
-                showToast(error.error || "Failed to leave room", "error");
-            }
+            await graphApi.removeAccess(currentRoomId, userToRemove.accessId);
+            showToast("You have left the room", "success");
+            handleDisconnect();
         } catch (err) {
             console.error("Error leaving room", err);
             showToast("Failed to leave room", "error");
@@ -1099,7 +1037,7 @@ export const DataTab: React.FC = () => {
         if (isLiveMode && isConnected && currentRoomId && !isClientMode) {
             fetchRoomAccessUsers();
         }
-    }, [isLiveMode, isConnected, currentRoomId, isClientMode]);
+    }, [isLiveMode, isConnected, currentRoomId, isClientMode, fetchRoomAccessUsers]);
 
     return (
         <div className="space-y-6">
@@ -1160,13 +1098,13 @@ export const DataTab: React.FC = () => {
                         />}
                         
 
-                        <SyncConflictModal
+                        {isSyncModalOpen && <SyncConflictModal
                             isOpen={isSyncModalOpen}
                             onClose={() => { setIsSyncModalOpen(false); setPendingRemoteData(null); }}
                             localData={{ nodes, edges, comments, config }}
                             remoteData={pendingRemoteData || { nodes: [], edges: [], comments: [] }}
                             onResolve={resolveSync}
-                        />
+                        />}
 
                         <ActiveUsersList
                             t={t}
