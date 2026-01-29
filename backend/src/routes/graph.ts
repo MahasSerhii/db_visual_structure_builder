@@ -553,6 +553,74 @@ router.get('/:projectId/history', authenticate, checkAccess(['Viewer']), async (
     } catch { res.status(500).json({ error: "History Fetch Failed" }); }
 });
 
+// Clear Graph (Keep Project)
+router.post('/clear-room', authenticate, async (req: AuthRequest, res: Response) => {
+    try {
+        const { roomId } = req.body;
+
+        if (!roomId) return res.status(400).json({ error: "Room ID required" });
+
+        const project = await Project.findOne({ roomId, isDeleted: false });
+
+        if (!project) return res.status(404).json({ error: "Project not found" });
+        
+        // Authorization
+        if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+        let hasAccess = false;
+
+        // Host (Owner)
+        if (project.ownerId.toString() === req.user._id.toString()) {
+            hasAccess = true;
+        } else {
+            // Check Access Doc
+            const accessDoc = await Access.findOne({ projectId: project._id, isDeleted: false });
+
+            if (accessDoc) {
+                const userAccess = accessDoc.access_granted.find(u => u.userId.toString() === req.user?._id.toString());
+
+                if (userAccess && ['Admin', 'Editor', 'host'].includes(userAccess.role)) {
+                    hasAccess = true;
+                }
+            }
+        }
+
+        if (!hasAccess) return res.status(403).json({ error: "Insufficient Permissions" });
+
+        const projectId = project._id;
+
+        // Perform Soft Delete
+        await Node.updateMany({ projectId }, { isDeleted: true, deletedAt: new Date() });
+        await Edge.updateMany({ projectId }, { isDeleted: true, deletedAt: new Date() });
+        await Comment.updateMany({ projectId }, { isDeleted: true, deletedAt: new Date() });
+        
+        // Create History Entry
+        const h = (await History.create({
+            projectId,
+            action: 'Clear Graph',
+            details: 'Graph cleared by user',
+            authorId: req.user.name,
+            timestamp: new Date()
+        })) as IHistory;
+
+        // Emit Socket Events
+        getIO().to(roomId).emit('room:cleared');
+        getIO().to(roomId).emit('history:add', {
+            id: h._id,
+            action: h.action,
+            details: h.details,
+            author: h.authorId,
+            timestamp: h.timestamp,
+            canRevert: true // Technically we could revert if we tracked all IDs
+        });
+
+        res.json({ success: true });
+    } catch (e: unknown) {
+        console.error("Clear Room Failed", e);
+        res.status(500).json({ error: "Failed to clear room" });
+    }
+});
+
 // Initialize / Create Project (Room)
 router.post('/init', authenticate, async (req: AuthRequest, res: Response) => {
     try {

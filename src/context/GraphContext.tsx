@@ -325,7 +325,15 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              socket.on('comment:delete', handleCommentDelete);
              socket.on('history:add', handleHistoryAdd);
              socket.on('history:clear', handleHistoryClear);
-             
+             socket.on('room:cleared', () => {
+                 setNodes([]);
+                 setEdges([]);
+                 setComments([]);
+                 // Optionally clear history too if backend clears it?
+                 // Usually clear room implies clearing history or at least invalidating it.
+                 // Backend implementation below will show if we clear history.
+             });
+
              socket.on('user:removed', (data: { userId: string; message?: string }) => {
                  const myUserId = localStorage.getItem('my_user_id');
                  
