@@ -1,22 +1,29 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import Project from '../models/Project';
-import Node from '../models/Node';
-import Edge from '../models/Edge';
-import Comment from '../models/Comment';
-import History from '../models/History';
+import Project, { IProject } from '../models/Project';
+import Node, { INode } from '../models/Node';
+import Edge, { IEdge } from '../models/Edge';
+import Comment, { IComment } from '../models/Comment';
+import History, { IHistory } from '../models/History';
 import Access from '../models/Access';
-import User from '../models/User';
-import jwt from 'jsonwebtoken';
+import User, { IUser } from '../models/User';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import { getIO } from '../socket';
 
+// Extended Request Interface
+interface AuthRequest extends Request {
+    user?: IUser;
+    project?: IProject;
+    role?: string;
+}
+
 // Utility to calculate Diff
-const calculateNodeDiff = (oldObj: any, newObj: any) => {
-    const changes: any = {};
+const calculateNodeDiff = (oldObj: Partial<INode>, newObj: Partial<INode>) => {
+    const changes: Record<string, unknown> = {};
     const details: string[] = [];
     
     // Basic Fields
-    const fields = ['title', 'description', 'color', 'docLink'];
+    const fields: (keyof INode)[] = ['title', 'description', 'color', 'docLink'];
     fields.forEach(f => {
         if (oldObj[f] !== newObj[f] && (oldObj[f] || newObj[f])) {
             changes[f] = oldObj[f];
@@ -38,14 +45,14 @@ const calculateNodeDiff = (oldObj: any, newObj: any) => {
     if (JSON.stringify(oldProps) !== JSON.stringify(newProps)) {
         changes.props = oldProps; // Store old props to revert
         
-        const oldMap = new Map(oldProps.map((p: any) => [p.name || p.id, p]));
-        const newMap = new Map(newProps.map((p: any) => [p.name || p.id, p]));
+        const oldMap = new Map(oldProps.map((p) => [p.name || p.id, p]));
+        const newMap = new Map(newProps.map((p) => [p.name || p.id, p]));
         
-        const added = newProps.filter((p: any) => !oldMap.has(p.name || p.id));
-        const removed = oldProps.filter((p: any) => !newMap.has(p.name || p.id));
+        const added = newProps.filter((p) => !oldMap.has(p.name || p.id));
+        const removed = oldProps.filter((p) => !newMap.has(p.name || p.id));
         
-        if (added.length) details.push(`Added prop: ${added.map((a:any)=>a.name).join(', ')}`);
-        if (removed.length) details.push(`Removed prop: ${removed.map((r:any)=>r.name).join(', ')}`);
+        if (added.length) details.push(`Added prop: ${added.map((a)=>a.name).join(', ')}`);
+        if (removed.length) details.push(`Removed prop: ${removed.map((r)=>r.name).join(', ')}`);
         if (!added.length && !removed.length) details.push('Properties modified');
     }
 
@@ -56,12 +63,12 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-me';
 
 // Middleware to verify token and get user
-const authenticate = async (req: any, res: any, next: any) => {
+const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: "Unauthorized" });
 
     try {
-        const decoded: any = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
         // Find User by email or ID
         const user = await User.findOne({ email: decoded.email });
         if (!user) return res.status(401).json({ error: "User not found" });
@@ -73,80 +80,116 @@ const authenticate = async (req: any, res: any, next: any) => {
 };
 
 // Middleware to check project access
-const checkAccess = (roleRequired: string[] = ['viewer', 'writer', 'admin', 'host']) => {
-    return async (req: any, res: any, next: any) => {
+const checkAccess = (roleRequired: string[] = ['Viewer', 'Editor', 'Admin', 'host']) => {
+    return async (req: AuthRequest, res: Response, next: NextFunction) => {
         const projectIdStr = req.params.projectId;
-        // Project ID might be the ROOM ID string, not _id
-        // Let's resolve project first
         try {
             const project = await Project.findOne({ roomId: projectIdStr });
             if (!project) return res.status(404).json({ error: "Project not found" });
             req.project = project;
 
-            // Host is owner
-            if (project.ownerId.toString() === req.user._id.toString()) {
+            if (!req.user) return res.status(401).json({ error: "User not found" });
+            const user = req.user;
+            
+            // Host is owner - always full rights
+            if (project.ownerId.toString() === user._id.toString()) {
                 req.role = 'host';
                 return next();
             }
 
-            // Check access by userId first
-            let access = await Access.findOne({ 
-                projectId: project._id as any, 
-                userId: req.user._id as any,
+            // Check access in the single Access document
+            const accessDoc = await Access.findOne({ 
+                projectId: project._id, 
                 isDeleted: false 
             });
             
-            // If no access by userId, check by email (for invited users)
-            if (!access && req.user.email) {
-                access = await Access.findOne({ 
-                    projectId: project._id as any, 
-                    invitedEmail: req.user.email,
-                    isDeleted: false 
-                });
-                
-                // If found by email but userId is not set, update it now that user has logged in
-                if (access && !access.userId) {
-                    access.userId = req.user._id;
-                    await access.save();
-                }
+            let userAccess = accessDoc?.access_granted.find(u => u.userId.toString() === user._id.toString());
+
+             // If not found by ID, try to find by email if invited (and link it)
+            if (!userAccess && user.email) {
+                 const invitedIndex = accessDoc?.access_granted.findIndex(u => u.invitedEmail === user.email);
+                 if (invitedIndex !== undefined && invitedIndex !== -1 && accessDoc) {
+                     // Update the record to link userId
+                     accessDoc.access_granted[invitedIndex].userId = user._id;
+                     accessDoc.access_granted[invitedIndex].joinedAt = new Date();
+                     await accessDoc.save();
+                     userAccess = accessDoc.access_granted[invitedIndex];
+                 }
             }
             
-            if (!access) {
+            if (!userAccess) {
                 return res.status(403).json({ 
-                    error: "You have no access for this room. Please contact the author of the room or create a room with a different name.",
+                    error: "You have no access for this room.",
                     code: "NO_ACCESS"
                 });
             }
 
-            if (!roleRequired.includes(access.role)) {
-                return res.status(403).json({ error: "Insufficient Permissions" });
+            // Map roles if necessary or ensure consistency
+            // userAccess.role is Admin | Editor | Viewer. 
+            // roleRequired might contain 'writer' from old code? 
+            // We should treat 'Editor' as 'writer' equivalent if needed, or update callers.
+            // For now, let's assume callers will pass ['Editor'] etc. or we map.
+            
+            const role = userAccess.role;
+            // Simple check: Admin > Editor > Viewer
+            // If strictly checking string inclusion:
+            
+            // Map old roles to new for compatibility during refactor if needed?
+            // User asked to "update this logic and all related code".
+            
+            // Allowed Roles logic
+            const hasPermission = roleRequired.includes(role) || 
+                                 (role === 'Admin' && (roleRequired.includes('Editor') || roleRequired.includes('Viewer'))) ||
+                                 (role === 'Editor' && roleRequired.includes('Viewer'));
+
+            if (!hasPermission && !roleRequired.includes('host')) { 
+                 return res.status(403).json({ error: "Insufficient Permissions" });
             }
-            req.role = access.role;
+            
+            req.role = role;
             next();
         } catch (e) {
+            console.error(e);
             res.status(500).json({ error: "Access Check Failed" });
         }
     };
 };
 
 // GET Graph Data
-router.get('/:projectId', authenticate, checkAccess(['viewer', 'writer', 'admin', 'host']), async (req: any, res) => {
+router.get('/:projectId', authenticate, checkAccess(['Viewer', 'Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project) return res.status(404).json({ error: "Project not loaded" });
         const projectId = req.project._id;
 
         const nodes = await Node.find({ projectId, isDeleted: false });
         const edges = await Edge.find({ projectId, isDeleted: false });
         const comments = await Comment.find({ projectId, isDeleted: false });
         
+        const owner = await User.findById(req.project.ownerId);
+
         // Transform to FE shape (clean _id?)
         // FE expects 'id' (uuid), not _id (mongo). 
         // Models have nodeId/edgeId/commentId.
         
-        const cleanNodes = nodes.map(n => ({ ...n.toObject(), id: n.nodeId, _id: undefined }));
-        const cleanEdges = edges.map(e => ({ ...e.toObject(), id: e.edgeId, _id: undefined }));
-        const cleanComments = comments.map(c => ({ ...c.toObject(), id: c.commentId, _id: undefined }));
+        const cleanNodes = nodes.map(n => {
+             const obj = n.toObject ? n.toObject() : n;
+             return { ...obj, id: n.nodeId, _id: undefined };
+        });
+        const cleanEdges = edges.map(e => {
+             const obj = e.toObject ? e.toObject() : e;
+             return { ...obj, id: e.edgeId, _id: undefined };
+        });
+        const cleanComments = comments.map(c => {
+             const obj = c.toObject ? c.toObject() : c;
+             return { ...obj, id: c.commentId, _id: undefined };
+        });
 
         const history = await History.find({ projectId }).sort({ timestamp: -1 }).limit(50);
+        
+        const config = req.project.config || {};
+        const bg = (config.defaultColors && config.defaultColors.canvasBg) 
+                   ? config.defaultColors.canvasBg 
+                   : '#f8fafc';
 
         res.json({
             nodes: cleanNodes,
@@ -155,8 +198,9 @@ router.get('/:projectId', authenticate, checkAccess(['viewer', 'writer', 'admin'
             project: {
                 name: req.project.name,
                 role: req.role,
-                backgroundColor: req.project.config?.backgroundColor || '#f8fafc',
-                config: req.project.config
+                config: config,
+                ownerName: owner ? owner.name : 'Unknown',
+                ownerColor: owner ? owner.color : '#ccc'
             },
             history: history.map(h => ({
                 id: h._id,
@@ -175,26 +219,38 @@ router.get('/:projectId', authenticate, checkAccess(['viewer', 'writer', 'admin'
 });
 
 // UPSERT Node
-router.put('/:projectId/node', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.put('/:projectId/node', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { id, title, description, color, x, y, docLink, props } = req.body;
         
         // Find existing to snapshot for history
         const existing = await Node.findOne({ projectId: req.project._id, nodeId: id });
         
+        // Apply default color if new node and no color provided
+        let affectedColor = color;
+        if ((!existing || existing.isDeleted) && !affectedColor) {
+             const conf = req.project.config || {};
+             if (conf.defaultColors && conf.defaultColors.nodeBg) {
+                 affectedColor = conf.defaultColors.nodeBg;
+             }
+        }
+
         let action = 'Add Node';
         let details = `Node ${title || id} created`;
-        let previousState: any = null;
-        let newState: any = { title, description, color, x, y, docLink, props };
+        let previousState: Record<string, unknown> | null = null;
+        let newState: Record<string, unknown> = { title, description, color: affectedColor, x, y, docLink, props };
 
         if (existing) {
             if (existing.isDeleted) {
                 action = 'Restore Node';
                 details = `Node ${title || id} restored`;
-                previousState = existing.toObject();
+                const obj = existing.toObject ? existing.toObject() : existing;
+                previousState = obj as unknown as Record<string, unknown>;
             } else {
                 action = 'Update Node';
-                const diff = calculateNodeDiff(existing.toObject(), req.body);
+                const obj = existing.toObject ? existing.toObject() : existing;
+                const diff = calculateNodeDiff(obj, req.body);
                 if (Object.keys(diff.changes).length === 0) {
                      await Node.findOneAndUpdate({ projectId: req.project._id, nodeId: id }, { updatedAt: new Date() });
                      return res.json({ success: true });
@@ -204,22 +260,26 @@ router.put('/:projectId/node', authenticate, checkAccess(['writer', 'admin', 'ho
                 
                 // Partial new state
                 newState = {};
-                Object.keys(diff.changes).forEach(k => newState[k] = req.body[k]);
+                Object.keys(diff.changes).forEach((k: string) => {
+                    newState[k] = req.body[k];
+                });
             }
         }
         
         const node = await Node.findOneAndUpdate(
             { projectId: req.project._id, nodeId: id },
             { 
-                title, description, color, x, y, docLink, props,
+                title, description, color: affectedColor, x, y, docLink, props,
                 isDeleted: false,
                 updatedAt: new Date(),
                 $setOnInsert: { createdBy: req.user._id }
             },
             { upsert: true, new: true, setDefaultsOnInsert: true }
         );
+        
+        if (!node) throw new Error("Node update failed");
 
-        const h = await History.create({
+        const h = (await History.create({
             projectId: req.project._id,
             action,
             details,
@@ -228,11 +288,12 @@ router.put('/:projectId/node', authenticate, checkAccess(['writer', 'admin', 'ho
             entityId: id,
             previousState,
             newState
-        });
+        })) as IHistory;
 
         // Emit Socket Event
         const roomId = req.params.projectId;
-        getIO().to(roomId).emit('node:update', { ...node.toObject(), id: node.nodeId });
+        const nodeObj = node.toObject ? node.toObject() : node;
+        getIO().to(roomId).emit('node:update', { ...nodeObj, id: node.nodeId });
         
         getIO().to(roomId).emit('history:add', {
             id: h._id,
@@ -246,14 +307,15 @@ router.put('/:projectId/node', authenticate, checkAccess(['writer', 'admin', 'ho
         });
 
         res.json({ success: true });
-    } catch (e) {
+    } catch (e: unknown) {
         res.status(500).json({ error: "Update Node Failed" });
     }
 });
 
 // DELETE Node (Soft)
-router.delete('/:projectId/node/:nodeId', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.delete('/:projectId/node/:nodeId', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { nodeId } = req.params;
         const node = await Node.findOne({ projectId: req.project._id, nodeId });
         
@@ -262,15 +324,16 @@ router.delete('/:projectId/node/:nodeId', authenticate, checkAccess(['writer', '
             node.deletedAt = new Date();
             await node.save();
             
-            const h = await History.create({
+            const h = (await History.create({
                 projectId: req.project._id,
                 action: 'Delete Node',
                 details: `Node ${node.title || nodeId} deleted`,
                 authorId: req.user.name,
+
                 entityType: 'node',
                 entityId: nodeId,
-                previousState: node.toObject()
-            });
+                previousState: (node.toObject ? node.toObject() : node) as unknown as Record<string, unknown>
+            })) as IHistory;
             
             // Emit Socket Event
             getIO().to(req.params.projectId).emit('node:delete', { id: nodeId });
@@ -287,29 +350,30 @@ router.delete('/:projectId/node/:nodeId', authenticate, checkAccess(['writer', '
             });
         }
         res.json({ success: true });
-    } catch (e) {
+    } catch (e: unknown) {
          res.status(500).json({ error: "Delete Failed" });
     }
 });
 
 // Same for Edge
-router.put('/:projectId/edge', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.put('/:projectId/edge', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
      try {
+        if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { id, source, target, label, sourceProp, targetProp } = req.body;
         
         const existing = await Edge.findOne({ projectId: req.project._id, edgeId: id });
         
         let action = 'Add Edge';
         let details = `Edge ${id} added`;
-        let previousState: any = null;
-        let newState: any = { source, target, label, sourceProp, targetProp };
+        let previousState: Record<string, unknown> | null = null;
+        let newState: Record<string, unknown> = { source, target, label, sourceProp, targetProp };
 
         if (existing) {
              action = 'Update Edge';
              // Diff
-             const changes: any = {};
+             const changes: Record<string, unknown> = {};
              const diffs: string[] = [];
-             const oldObj = existing.toObject();
+             const oldObj = existing.toObject ? existing.toObject() : existing;
              
              if (oldObj.label !== label) { changes.label = oldObj.label; diffs.push('Label updated'); }
              // Compare IDs for source/target if they are strings
@@ -327,7 +391,9 @@ router.put('/:projectId/edge', authenticate, checkAccess(['writer', 'admin', 'ho
              previousState = changes;
              
              newState = {};
-             Object.keys(changes).forEach(k => newState[k] = req.body[k]);
+             Object.keys(changes).forEach((k: string) => {
+                 newState[k] = req.body[k];
+             });
         }
         
         const edge = await Edge.findOneAndUpdate(
@@ -340,8 +406,10 @@ router.put('/:projectId/edge', authenticate, checkAccess(['writer', 'admin', 'ho
             },
             { upsert: true, new: true, setDefaultsOnInsert: true }
         );
+        
+        if (!edge) throw new Error("Edge update failed");
 
-        const h = await History.create({
+        const h = (await History.create({
             projectId: req.project._id,
             action,
             details,
@@ -350,10 +418,11 @@ router.put('/:projectId/edge', authenticate, checkAccess(['writer', 'admin', 'ho
             entityId: id,
             previousState,
             newState
-        });
+        })) as IHistory;
         
         // Emit Socket Event
-        getIO().to(req.params.projectId).emit('edge:update', { ...edge.toObject(), id: edge.edgeId });
+        const edgeObj = edge.toObject ? edge.toObject() : edge;
+        getIO().to(req.params.projectId).emit('edge:update', { ...edgeObj, id: edge.edgeId });
 
         getIO().to(req.params.projectId).emit('history:add', {
             id: h._id,
@@ -367,28 +436,29 @@ router.put('/:projectId/edge', authenticate, checkAccess(['writer', 'admin', 'ho
         });
 
         res.json({ success: true });
-    } catch (e) {
+    } catch (e: unknown) {
         res.status(500).json({ error: "Update Edge Failed" });
     }
 });
 
-router.delete('/:projectId/edge/:edgeId', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.delete('/:projectId/edge/:edgeId', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { edgeId } = req.params;
         const edge = await Edge.findOne({ projectId: req.project._id, edgeId });
         if(edge) {
             edge.isDeleted = true;
             edge.deletedAt = new Date();
             await edge.save();
-            const h = await History.create({
+            const h = (await History.create({
                 projectId: req.project._id,
                 action: 'Delete Edge',
                 details: `Edge ${edgeId} deleted`,
                 authorId: req.user.name,
                 entityType: 'edge',
                 entityId: edgeId,
-                previousState: edge.toObject()
-            });
+                previousState: (edge.toObject ? edge.toObject() : edge) as unknown as Record<string, unknown>
+            })) as IHistory;
 
             // Emit Socket Event
             getIO().to(req.params.projectId).emit('edge:delete', { id: edgeId });
@@ -405,12 +475,13 @@ router.delete('/:projectId/edge/:edgeId', authenticate, checkAccess(['writer', '
             });
         }
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: "Delete Edge Failed" }); }
+    } catch (e: unknown) { res.status(500).json({ error: "Delete Edge Failed" }); }
 });
 
 // Comment Ops
-router.put('/:projectId/comment', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.put('/:projectId/comment', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
      try {
+        if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { id, text, x, y, color } = req.body;
         const comment = await Comment.findOneAndUpdate(
             { projectId: req.project._id, commentId: id },
@@ -421,41 +492,47 @@ router.put('/:projectId/comment', authenticate, checkAccess(['writer', 'admin', 
             },
             { upsert: true, new: true }
         );
+        if (!comment) throw new Error("Comment update failed");
         
-        getIO().to(req.params.projectId).emit('comment:update', { ...comment.toObject(), id: comment.commentId });
+        const commentObj = comment.toObject ? comment.toObject() : comment;
+        getIO().to(req.params.projectId).emit('comment:update', { ...commentObj, id: comment.commentId });
 
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: "Comment Failed" }); }
+    } catch (e: unknown) { res.status(500).json({ error: "Comment Failed" }); }
 });
 
-router.delete('/:projectId/comment/:commentId', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.delete('/:projectId/comment/:commentId', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project) return res.status(401).json({ error: "Context missing" });
         await Comment.findOneAndUpdate(
             { projectId: req.project._id, commentId: req.params.commentId },
             { isDeleted: true, deletedAt: new Date() }
         );
         getIO().to(req.params.projectId).emit('comment:delete', { id: req.params.commentId });
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: "Delete Comment Failed" }); }
+    } catch (e: unknown) { res.status(500).json({ error: "Delete Comment Failed" }); }
 });
 
 // History
-router.get('/:projectId/history', authenticate, checkAccess(['viewer']), async (req: any, res) => {
+router.get('/:projectId/history', authenticate, checkAccess(['Viewer']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project) return res.status(401).json({ error: "Context missing" });
         const history = await History.find({ projectId: req.project._id })
             .sort({ timestamp: -1 })
             .limit(100);
         res.json(history);
-    } catch(e) { res.status(500).json({ error: "History Fetch Failed" }); }
+    } catch(e: unknown) { res.status(500).json({ error: "History Fetch Failed" }); }
 });
 
 // Initialize / Create Project (Room)
-router.post('/init', authenticate, async (req: any, res) => {
+router.post('/init', authenticate, async (req: AuthRequest, res: Response) => {
     try {
         const { roomId, name, config } = req.body;
         
         let project = await Project.findOne({ roomId });
         if (!project) {
+            if (!req.user) return res.status(401).json({ error: "Context missing" });
+
             // Check if a project with the same name already exists
             const existingProjectWithName = await Project.findOne({ 
                 name: name || `Project ${roomId}`,
@@ -473,7 +550,20 @@ router.post('/init', authenticate, async (req: any, res) => {
                 roomId,
                 name: name || `Project ${roomId}`,
                 ownerId: req.user._id,
-                config
+                config: config
+            });
+
+             // Create Access Record for this (new) project
+            await Access.create({
+                projectId: project._id,
+                authorId: req.user._id,
+                access_granted: [{ 
+                    userId: req.user._id,
+                    authorised: true, // Creator is authorized
+                    role: 'Admin',
+                    visible: true,
+                    joinedAt: new Date()
+                }]
             });
         }
         
@@ -481,15 +571,16 @@ router.post('/init', authenticate, async (req: any, res) => {
         // Actually checkAccess uses ownerId field so we are good.
 
         res.json({ success: true, project });
-    } catch(e) { 
+    } catch(e: unknown) { 
         const err = e as Error;
         res.status(500).json({ error: err.message || "Init Failed" }); 
     }
 });
 
 // Bulk Sync (for migration or full save)
-router.post('/:projectId/sync', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.post('/:projectId/sync', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { nodes, edges, comments, config } = req.body;
         const projectId = req.project._id;
         const replace = req.query.replace === 'true';
@@ -507,7 +598,7 @@ router.post('/:projectId/sync', authenticate, checkAccess(['writer', 'admin', 'h
             });
         }
         
-        const bulkOps = [];
+        const bulkOps: mongoose.AnyBulkWriteOperation<INode>[] = [];
         
         if (nodes) {
             for (const n of nodes) {
@@ -532,9 +623,9 @@ router.post('/:projectId/sync', authenticate, checkAccess(['writer', 'admin', 'h
                 });
             }
         }
-        if (bulkOps.length > 0) await Node.bulkWrite(bulkOps as any);
+        if (bulkOps.length > 0) await Node.bulkWrite(bulkOps);
 
-        const edgeOps = [];
+        const edgeOps: mongoose.AnyBulkWriteOperation<IEdge>[] = [];
         if (edges) {
             for (const e of edges) {
                 edgeOps.push({
@@ -557,9 +648,9 @@ router.post('/:projectId/sync', authenticate, checkAccess(['writer', 'admin', 'h
                 });
             }
         }
-        if (edgeOps.length > 0) await Edge.bulkWrite(edgeOps as any);
+        if (edgeOps.length > 0) await Edge.bulkWrite(edgeOps);
 
-        const commentOps = [];
+        const commentOps: mongoose.AnyBulkWriteOperation<IComment>[] = [];
         if (comments) {
              for (const c of comments) {
                 commentOps.push({
@@ -570,24 +661,25 @@ router.post('/:projectId/sync', authenticate, checkAccess(['writer', 'admin', 'h
                                 text: c.text, x: c.x, y: c.y, color: c.color, authorId: c.authorId || req.user.name,
                                 isDeleted: false,
                                 updatedAt: new Date()
-                            }
+                            },
+                            $setOnInsert: { createdBy: req.user._id }
                         },
                         upsert: true
                     }
                 });
             }
         }
-        if (commentOps.length > 0) await Comment.bulkWrite(commentOps as any);
+        if (commentOps.length > 0) await Comment.bulkWrite(commentOps);
 
-        const h = await History.create({
+        const h = (await History.create({
              projectId,
              action: replace ? 'Import JSON' : 'Bulk Sync',
              details: replace ? `Restored from backup: ${nodes?.length || 0} nodes` : `Synced ${nodes?.length || 0} nodes`,
              authorId: req.user.name,
              timestamp: new Date()
-        });
+        })) as IHistory;
 
-        getIO().to(projectId).emit('history:add', {
+        getIO().to(projectId.toString()).emit('history:add', {
             id: h._id,
             action: h.action,
             details: h.details,
@@ -597,20 +689,60 @@ router.post('/:projectId/sync', authenticate, checkAccess(['writer', 'admin', 'h
         });
 
         res.json({ success: true });
-    } catch(e) {
-        console.error(e);
+    } catch(e: unknown) {
+        // console.error(e);
         res.status(500).json({ error: "Bulk Sync Failed" });
     }
 });
 
-// Update Project Background
-router.put('/:projectId/background', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+// Update Project Config (General Settings)
+router.put('/:projectId/config', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project) return res.status(401).json({ error: "Context missing" });
+        const { config } = req.body;
+
+        // Merge with existing config
+        const currentConfig = req.project.config || {};
+        const newConfig = { ...currentConfig, ...config };
+        
+        // Specifically update defaultColors structure
+        if (config.defaultColors) {
+            newConfig.defaultColors = {
+                 ...(typeof currentConfig.defaultColors === 'object' ? currentConfig.defaultColors : {}),
+                 ...config.defaultColors
+            };
+        }
+
+        req.project.config = newConfig;
+        req.project.markModified('config');
+        
+        await req.project.save();
+
+        getIO().to(req.params.projectId).emit('project:settings', { config: newConfig });
+        
+        res.json({ success: true });
+    } catch (e) {
+        console.error("Config Update Failed", e);
+        res.status(500).json({ error: "Config Update Failed" });
+    }
+});
+
+// Update Project Background
+router.put('/:projectId/background', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { color } = req.body;
         
-        // Update config.backgroundColor
+        // Update config.defaultColors.canvasBg instead of config.backgroundColor
         const config = req.project.config || {};
-        config.backgroundColor = color;
+        
+        if (!config.defaultColors) config.defaultColors = {};
+        if (config.defaultColors) {
+            config.defaultColors.canvasBg = color;
+        }
+        
+        // Remove legacy backgroundColor if present
+        if ('backgroundColor' in config) delete config['backgroundColor'];
         
         // Use markModified if config is Mixed type
         req.project.config = config;
@@ -620,13 +752,14 @@ router.put('/:projectId/background', authenticate, checkAccess(['writer', 'admin
         
         const h = await History.create({
             projectId: req.project._id,
-            action: 'Update Background',
-            details: `Project background changed to ${color}`,
-            authorId: req.user.name,
             timestamp: new Date()
-        });
+        }) as IHistory;
 
-        getIO().to(req.params.projectId).emit('project:settings', { backgroundColor: color });
+        // Emit updated config
+        getIO().to(req.params.projectId).emit('project:settings', { 
+            config,
+            backgroundColor: color 
+        });
         
         getIO().to(req.params.projectId).emit('history:add', {
             id: h._id,
@@ -644,8 +777,9 @@ router.put('/:projectId/background', authenticate, checkAccess(['writer', 'admin
 
 
 // DELETE Project (Soft)
-router.delete('/:projectId', authenticate, checkAccess(['host']), async (req: any, res) => {
+router.delete('/:projectId', authenticate, checkAccess(['host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project) return res.status(401).json({ error: "Context missing" });
         const project = req.project;
         project.isDeleted = true;
         await project.save();
@@ -665,8 +799,9 @@ router.delete('/:projectId', authenticate, checkAccess(['host']), async (req: an
 });
 
 // REVERT History Item
-router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { historyId } = req.params;
         const item = await History.findById(historyId);
         if (!item || item.projectId.toString() !== req.project._id.toString()) {
@@ -678,8 +813,8 @@ router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess([
         if (item.entityType === 'node' && item.entityId) {
             if (item.action.includes('Delete') || item.action.includes('Update') || item.action === 'Restore Node' || item.previousState) {
                 if (item.previousState) {
-                    const p = { ...item.previousState };
-                    delete p._id; 
+                    const p: Record<string, unknown> = { ...item.previousState };
+                    if ('_id' in p) delete p['_id']; 
                     
                     await Node.findOneAndUpdate(
                         { projectId: req.project._id, nodeId: item.entityId },
@@ -690,7 +825,10 @@ router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess([
                     );
                     
                     const updatedNode = await Node.findOne({ projectId: req.project._id, nodeId: item.entityId });
-                    getIO().to(req.params.projectId).emit('node:update', { ...updatedNode?.toObject(), id: item.entityId });
+                    const updatedNodeObj = updatedNode && (updatedNode.toObject ? updatedNode.toObject() : updatedNode);
+                    if (updatedNodeObj) {
+                        getIO().to(req.params.projectId).emit('node:update', { ...updatedNodeObj, id: item.entityId });
+                    }
                     reverted = true;
                 }
             } else if (item.action.includes('Add') || item.action.includes('Create')) {
@@ -704,8 +842,8 @@ router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess([
         } 
         else if (item.entityType === 'edge' && item.entityId) {
              if (item.previousState) {
-                const p = { ...item.previousState };
-                delete p._id;
+                const p: Record<string, unknown> = { ...item.previousState };
+                if ('_id' in p) delete p['_id'];
 
                 await Edge.findOneAndUpdate(
                     { projectId: req.project._id, edgeId: item.entityId },
@@ -716,7 +854,10 @@ router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess([
                 );
                 
                 const updatedEdge = await Edge.findOne({ projectId: req.project._id, edgeId: item.entityId });
-                getIO().to(req.params.projectId).emit('edge:update', { ...updatedEdge?.toObject(), id: item.entityId });
+                const updatedEdgeObj = updatedEdge && (updatedEdge.toObject ? updatedEdge.toObject() : updatedEdge);
+                if (updatedEdgeObj) {
+                    getIO().to(req.params.projectId).emit('edge:update', { ...updatedEdgeObj, id: item.entityId });
+                }
                 reverted = true;
              } else if (item.action.includes('Add')) {
                  await Edge.findOneAndUpdate(
@@ -729,13 +870,13 @@ router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess([
         }
 
         if (reverted) {
-            const h = await History.create({
+            const h = (await History.create({
                 projectId: req.project._id,
                 action: `Revert: ${item.action}`,
                 details: `Reverted change from ${item.timestamp.toISOString()}`,
                 authorId: req.user.name,
                 timestamp: new Date()
-            });
+            })) as IHistory;
             
             getIO().to(req.params.projectId).emit('history:add', {
                 id: h._id,
@@ -749,15 +890,16 @@ router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess([
         } else {
             res.status(400).json({ error: "Cannot revert this item (missing state)" });
         }
-    } catch (e) {
+    } catch (e: unknown) {
         console.error("Revert Failed", e);
         res.status(500).json({ error: "Revert Failed" });
     }
 });
 
 // DELETE History (Clear All)
-router.delete('/:projectId/history', authenticate, checkAccess(['writer', 'admin', 'host']), async (req: any, res) => {
+router.delete('/:projectId/history', authenticate, checkAccess(['Editor', 'Admin', 'host']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project) return res.status(401).json({ error: "Context missing" });
         console.log(`Clearing history for project: ${req.project._id} (Room: ${req.params.projectId})`);
         const result = await History.deleteMany({ projectId: req.project._id });
         console.log(`Deleted ${result.deletedCount} history items.`);
@@ -772,63 +914,70 @@ router.delete('/:projectId/history', authenticate, checkAccess(['writer', 'admin
 });
 
 // GET Room Access Management - Fetch users with access to this room
-router.get('/:projectId/access', authenticate, checkAccess(['host']), async (req: any, res) => {
+router.get('/:projectId/access', authenticate, checkAccess(['host', 'Editor', 'Viewer']), async (req: AuthRequest, res: Response) => {
     try {
+        if (!req.project) return res.status(401).json({ error: "Context missing" });
         const projectId = req.project._id;
 
-        // Get all access records (both deleted and active)
-        const accessList = await Access.find({ projectId })
-            .populate('userId', 'name email')
-            .sort({ createdAt: -1 });
+        // Get single access record
+        const accessDoc = await Access.findOne({ projectId })
+            .populate('access_granted.userId', 'name email');
+
+        if (!accessDoc) {
+             return res.json({ success: true, users: [] });
+        }
 
         // Format response
-        const users = accessList.map(access => ({
-            id: access._id,
-            userId: access.userId,
-            name: (access.userId as any)?.name || 'Unknown',
-            email: (access.userId as any)?.email || access.invitedEmail || 'Unknown',
-            role: access.role,
-            isVisible: access.isVisible,
-            isDeleted: access.isDeleted,
-            invitedEmail: access.invitedEmail,
-            createdAt: access.createdAt
-        }));
+        const users = accessDoc.access_granted.map((uItem) => {
+            const u = uItem as unknown as { userId: IUser & { _id: string }, invitedEmail?: string, role: string, visible: boolean, joinedAt: Date };
+            return {
+                id: u.userId._id ?? u.userId, // Use UserID as key
+                userId: u.userId._id ?? u.userId,
+                name: u.userId.name || 'Unknown',
+                email: u.userId.email || u.invitedEmail || 'Unknown',
+                role: u.role,
+                isVisible: u.visible,
+                isDeleted: false, 
+                invitedEmail: u.invitedEmail,
+                createdAt: u.joinedAt
+            };
+        });
 
         res.json({ success: true, users });
-    } catch (e) {
+    } catch (e: unknown) {
         console.error("Failed to fetch access list", e);
         res.status(500).json({ error: "Failed to fetch access list" });
     }
 });
 
-// DELETE User from Room Access - Soft delete by access ID
-router.delete('/:projectId/access/:accessId', authenticate, checkAccess(['host']), async (req: any, res) => {
+// DELETE User from Room Access - Remove from array
+router.delete('/:projectId/access/:targetUserId', authenticate, checkAccess(['host']), async (req: AuthRequest, res: Response) => {
     try {
-        const { projectId, accessId } = req.params;
+        if (!req.project) return res.status(401).json({ error: "Context missing" });
+        const { targetUserId } = req.params;
         const project = req.project;
 
-        // Verify this access record belongs to this project
-        const access = await Access.findOne({ _id: accessId, projectId: project._id });
-        if (!access) {
-            return res.status(404).json({ error: "Access record not found" });
-        }
-
         // Cannot remove the host/owner
-        if (access.role === 'host' || project.ownerId.toString() === access.userId?.toString()) {
+        if (project.ownerId.toString() === targetUserId) {
             return res.status(403).json({ error: "Cannot remove project owner" });
         }
 
-        // Soft delete the access record
-        await Access.findByIdAndUpdate(accessId, { isDeleted: true, updatedAt: new Date() });
+        // Remove from array
+        await Access.findOneAndUpdate(
+            { projectId: project._id },
+            { 
+                 $pull: { access_granted: { userId: targetUserId } } 
+            }
+        );
 
         // Notify other users in the room
         getIO().to(req.params.projectId).emit('user:removed', {
-            accessId,
+            userId: targetUserId,
             message: `User removed from project`
         });
 
         res.json({ success: true, message: "User removed from project" });
-    } catch (e) {
+    } catch (e: unknown) {
         console.error("Failed to remove user from access", e);
         res.status(500).json({ error: "Failed to remove user" });
     }

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { NodeData, EdgeData, User, AppSettings, Comment } from '../utils/types';
+import { NodeData, EdgeData, User, AppSettings, Comment, UserProfile } from '../utils/types';
 import { dbOp, initDB, deleteWholeDB } from '../utils/indexedDB';
 import { getTranslation } from '../utils/translations';
 import { api, uploadFullGraphToBackend } from '../utils/api';
@@ -12,6 +12,10 @@ interface GraphContextType {
     edges: EdgeData[];
     comments: Comment[];
     config: AppSettings;
+    userProfile: UserProfile;
+    userId: string | null;
+    mySocketId: string | null;
+    updateUserProfile: (profile: Partial<UserProfile>) => void;
     isLoading: boolean;
     connectionStatus: ConnectionStatus;
     retryConnection: () => Promise<void>;
@@ -118,13 +122,32 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     // We keep local data in a ref or separate state to switch back
     const [localCache, setLocalCache] = useState<{nodes: NodeData[], edges: EdgeData[]} | null>(null);
 
+    const [userProfile, setUserProfile] = useState<UserProfile>({
+        name: '', 
+        color: '#6366F1', 
+        lastUpdated: 0 
+    });
+    const [userId, setUserId] = useState<string | null>(() => localStorage.getItem('my_user_id'));
+
     const [config, setConfig] = useState<AppSettings>({
         language: 'en',
         theme: 'light',
-        backgroundColor: '#f8fafc',
-        userProfile: { name: '', color: '#6366F1', lastUpdated: 0 },
-        defaultColors: { componentBg: '#6366F1', propertyText: '#000000' }
+        defaultColors: { componentBg: '#6366F1', propertyText: '#000000', canvasBg: '#f8fafc' }
     });
+    
+    // Helper to update user profile locally and persisting to match expectations/logic
+    const updateUserProfile = (profile: Partial<UserProfile>) => {
+        setUserProfile(prev => {
+            const next = { ...prev, ...profile, lastUpdated: Date.now() };
+            if (next.name && next.name !== 'User') {
+                 localStorage.setItem('my_user_name', next.name);
+            }
+            if (next.color) {
+                 localStorage.setItem('my_user_color', next.color);
+            }
+            return next;
+        });
+    };
     
     // Visibility
     const [isUserVisible, setIsUserVisible] = useState(() => {
@@ -143,6 +166,24 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
 
     // Auth State
     const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('auth_token'));
+    
+    // Check for missing ID on auth restore
+    useEffect(() => {
+        const token = localStorage.getItem('auth_token');
+        const currentId = localStorage.getItem('my_user_id');
+        if (token && !currentId) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                if (payload.id) {
+                    localStorage.setItem('my_user_id', payload.id);
+                    setUserId(payload.id);
+                }
+            } catch (e) {
+                console.warn("Could not restore User ID from token");
+            }
+        }
+    }, [isAuthenticated]);
+    
     const [savedProjects, setSavedProjects] = useState<any[]>(() => {
         try {
             const saved = localStorage.getItem('saved_projects');
@@ -155,6 +196,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
 
     // Socket.IO Setup
     const socketRef = useRef<Socket | null>(null);
+    const [mySocketId, setMySocketId] = useState<string | null>(null);
     const [activeUsers, setActiveUsers] = useState<any[]>([]);
 
     useEffect(() => {
@@ -163,7 +205,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         socketRef.current = socket;
 
         socket.on('connect', () => {
-            console.log("Socket Connected");
+            console.log("Socket Connected", socket.id);
+            setMySocketId(socket.id || null);
         });
 
         return () => {
@@ -178,15 +221,15 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         const handleJoinRoom = () => {
              if (currentRoomId && isAuthenticated) {
                  // Ensure we don't send empty/default profiles if we have them stored but not loaded in state yet?
-                 // Actually relying on 'config' state is best, as it updates when storage loads.
-                 const sessionUserName = config.userProfile.name || localStorage.getItem('my_user_name') || 'Anonymous';
+                 // Actually relying on 'userProfile' state is best, as it updates when storage loads.
+                 const sessionUserName = userProfile.name || localStorage.getItem('my_user_name') || 'Anonymous';
                  const sessionUserId = localStorage.getItem('my_user_id'); // Stabilize identity
                  
                  socket.emit('join-room', {
                      roomId: currentRoomId,
                      userId: sessionUserId, // Use stable ID for deduplication
                      userName: sessionUserName,
-                     userColor: config.userProfile.color,
+                     userColor: userProfile.color,
                      userEmail: (authProvider === 'email' ? 'hidden' : undefined),
                      isVisible: isUserVisible
                  });
@@ -278,10 +321,54 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              socket.on('history:add', handleHistoryAdd);
              socket.on('history:clear', handleHistoryClear);
              
-             socket.on('project:settings', (data: any) => {
-                 if (data.backgroundColor) {
-                     setConfig(prev => ({ ...prev, backgroundColor: data.backgroundColor }));
+             socket.on('user:removed', (data: any) => {
+                 const myUserId = localStorage.getItem('my_user_id');
+                 
+                 // 1. Update Active Users List locally for everyone (removes ghost user immediately)
+                 setActiveUsers(prev => prev.filter(u => u.userId !== data.userId));
+
+                 // 2. Handle Self Removal
+                 if (data.userId && myUserId && data.userId.toString() === myUserId.toString()) {
+                      console.warn("User removed from project. Disconnecting...");
+                      setLiveMode(false);
+                      setCurrentRoomId(null);
+                      setConnectionStatus('failed'); // Prevent reconnects
+                      setIsLoading(false);
+                      
+                      // Clear session to prevent auto-reconnect
+                      sessionStorage.removeItem('room_id_session'); 
+                      
+                      // Clean URL parameters to prevent re-joining on refresh
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete('room');
+                      url.searchParams.delete('config');
+                      url.searchParams.delete('token');
+                      window.history.replaceState({}, document.title, url.pathname);
+
+                      // Optional: Show Toast or Modal instead of Alert
+                      alert(data.message || "You have been removed from this project.");
+                      
+                      // Do NOT reload. Just behave as disconnected.
                  }
+             });
+
+             socket.on('project:settings', (data: any) => {
+                 setConfig(prev => {
+                     const next = { ...prev };
+                     if (data.backgroundColor) {
+                         next.defaultColors = { ...next.defaultColors, canvasBg: data.backgroundColor };
+                     }
+                     if (data.config) {
+                         // Merge fields deeply if needed, or just top level
+                         // For defaultColors we might need deeper merge?
+                         // For now assume top level merge is fine or backend returns full object structure
+                         Object.assign(next, data.config);
+                         if (data.config.defaultColors) {
+                             next.defaultColors = { ...prev.defaultColors, ...data.config.defaultColors };
+                         }
+                     }
+                     return next;
+                 });
              });
 
              // If the socket was already connected before this component mounted (e.g. from previous view)
@@ -302,10 +389,11 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  socket.off('comment:delete', handleCommentDelete);
                  socket.off('history:add', handleHistoryAdd);
                  socket.off('history:clear', handleHistoryClear);
+                 socket.off('user:removed');
                  socket.off('presence:update');
              };
         }
-    }, [currentRoomId, isAuthenticated, config.userProfile.name, config.userProfile.color, isUserVisible]); // Re-join if profile changes
+    }, [currentRoomId, isAuthenticated, userProfile.name, userProfile.color, isUserVisible]); // Re-join if profile changes
 
     useEffect(() => {
         const token = localStorage.getItem('auth_token');
@@ -319,7 +407,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         }
     }, []);
 
-    const login = (token: string, email: string, name?: string, provider: 'email' | 'google' | 'apple' = 'email', projects: any[] = [], userProfile?: any) => {
+    const login = (token: string, email: string, name?: string, provider: 'email' | 'google' | 'apple' = 'email', projects: any[] = [], dbUserProfile?: any) => {
         localStorage.setItem('auth_token', token);
         localStorage.setItem('auth_provider', provider);
         localStorage.setItem('saved_projects', JSON.stringify(projects));
@@ -328,21 +416,25 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         setSavedProjects(projects);
 
         // Sync Logic: Compare Local vs Server Timestamp
-        const serverTime = userProfile?.profileUpdatedAt ? new Date(userProfile.profileUpdatedAt).getTime() : 0;
-        const localTime = config.userProfile.lastUpdated || 0;
+        const serverTime = dbUserProfile?.profileUpdatedAt ? new Date(dbUserProfile.profileUpdatedAt).getTime() : 0;
+        const localTime = userProfile.lastUpdated || 0;
         
         // If Server is newer OR Local is uninitialized (0) -> Use Server Profile
-        if ((serverTime > localTime || localTime === 0) && userProfile) {
+        if ((serverTime > localTime || localTime === 0) && dbUserProfile) {
             console.log("Syncing Profile from Server");
-            const merged = { ...config.userProfile };
-            if (userProfile.name) merged.name = userProfile.name;
-            if (userProfile.color) merged.color = userProfile.color;
+            const merged = { ...userProfile };
+            if (dbUserProfile.name) merged.name = dbUserProfile.name;
+            if (dbUserProfile.color) merged.color = dbUserProfile.color;
             merged.lastUpdated = serverTime || Date.now();
 
-            const newConfig = { ...config, userProfile: merged };
-            setConfig(newConfig);
-            localStorage.setItem('app_config', JSON.stringify(newConfig));
-            localStorage.setItem('my_user_name', merged.name); // Legacy sync
+            setUserProfile(merged);
+            localStorage.setItem('my_user_name', merged.name);
+            if (merged.color) localStorage.setItem('my_user_color', merged.color);
+            if (dbUserProfile._id || dbUserProfile.id) {
+                const uid = dbUserProfile._id || dbUserProfile.id;
+                localStorage.setItem('my_user_id', uid);
+                setUserId(uid);
+            }
         } else {
              // Local is newer -> Push to Server
              if (localTime > serverTime) {
@@ -354,43 +446,51 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                         'Authorization': `Bearer ${token}`
                     },
                     body: JSON.stringify({ 
-                        name: config.userProfile.name, 
-                        color: config.userProfile.color, 
+                        name: userProfile.name, 
+                        color: userProfile.color, 
                         profileUpdatedAt: localTime 
                     })
                  }).catch(e => console.warn("Auto-sync profile failed", e));
              }
 
              // Base logic:
-             let finalName = config.userProfile.name;
+             let finalName = userProfile.name;
              // If local name is empty/default, adopt login name
              if (!finalName || finalName === 'User' || finalName === '') {
                  finalName = name || email.split('@')[0];
              }
              
              // Check if we should adopt color if local is default
-             let finalColor = config.userProfile.color;
-             if ((!finalColor || finalColor === '#6366F1') && userProfile?.color) {
-                 finalColor = userProfile.color;
+             let finalColor = userProfile.color;
+             if ((!finalColor || finalColor === '#6366F1') && dbUserProfile?.color) {
+                 finalColor = dbUserProfile.color;
              }
 
-             setConfig(prev => {
-                const updated = { 
-                    ...prev, 
-                    userProfile: { 
-                        ...prev.userProfile, 
-                        name: finalName,
-                        color: finalColor
-                    }
+             if (finalName !== userProfile.name || finalColor !== userProfile.color) {
+                 const updated = { 
+                    ...userProfile, 
+                    name: finalName,
+                    color: finalColor
                 };
-                localStorage.setItem('app_config', JSON.stringify(updated));
-                return updated;
-             });
+                setUserProfile(updated);
+             }
              localStorage.setItem('my_user_name', finalName);
+             localStorage.setItem('my_user_color', finalColor);
+        }
+        if (dbUserProfile && dbUserProfile._id) {
+            localStorage.setItem('my_user_id', dbUserProfile._id);
         }
     };
 
     const logout = async () => {
+        // 0. Notify Backend to clear sessions
+        if (socketRef.current) {
+            socketRef.current.emit('auth:logout');
+        }
+        
+        // Give backend a moment to process logout before cutting client
+        await new Promise(r => setTimeout(r, 100));
+
         // 1. Clear IndexedDB (Best Effort)
         try {
             await deleteWholeDB();
@@ -448,37 +548,31 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                     try {
                         const parsed = JSON.parse(savedConfig);
                         
-                        // Check for 'my_user_name' override if profile name is missing
                         const storedName = localStorage.getItem('my_user_name');
-                        if (storedName && (!parsed.userProfile?.name || parsed.userProfile.name === 'User')) {
-                             if (!parsed.userProfile) parsed.userProfile = {};
-                             parsed.userProfile.name = storedName;
+                        const storedColor = localStorage.getItem('my_user_color');
+                         if (storedName || storedColor) {
+                            setUserProfile(prev => ({ 
+                                ...prev, 
+                                name: storedName || prev.name,
+                                color: storedColor || prev.color
+                            }));
                         }
-
+                        
                         // Merge with default to ensure new fields exist
                          setConfig(prev => ({ 
                              ...prev, 
-                             ...parsed,
-                             userProfile: {
-                                 ...prev.userProfile,
-                                 ...(parsed.userProfile || {}),
-                                 // Enforce the stored name preference if available
-                                 name: (storedName && (!parsed.userProfile?.name || parsed.userProfile.name === 'User')) 
-                                     ? storedName 
-                                     : (parsed.userProfile?.name || prev.userProfile.name)
-                             }
+                             ...parsed
                          }));
                     } catch(e) { console.error("Config Parse Error", e); }
                 } else {
                     // No saved config, try to use stored name
                     const storedName = localStorage.getItem('my_user_name');
-                    if (storedName) {
-                        setConfig(prev => ({
-                            ...prev,
-                            userProfile: {
-                                ...prev.userProfile,
-                                name: storedName
-                            }
+                    const storedColor = localStorage.getItem('my_user_color');
+                    if (storedName || storedColor) {
+                        setUserProfile(prev => ({ 
+                            ...prev, 
+                            name: storedName || prev.name,
+                            color: storedColor || prev.color
                         }));
                     }
                 }
@@ -490,18 +584,15 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                         .then(res => {
                             if (res.data && res.data.user) {
                                 const u = res.data.user;
-                                setConfig(prev => {
+                                if (u._id) localStorage.setItem('my_user_id', u._id);
+                                
+                                setUserProfile(prev => {
                                     const next = {
                                         ...prev,
-                                        userProfile: {
-                                            ...prev.userProfile,
-                                            name: u.name || prev.userProfile.name,
-                                            color: u.color || prev.userProfile.color,
-                                            lastUpdated: Date.now()
-                                        }
+                                        name: u.name || prev.name,
+                                        color: u.color || prev.color,
+                                        lastUpdated: Date.now()
                                     };
-                                    // Update local storage to match server for next time
-                                    localStorage.setItem('app_config', JSON.stringify(next));
                                     // Also update the 'my_user_name' to keep it in sync for offline mode
                                     if(u.name && u.name !== 'User') {
                                         localStorage.setItem('my_user_name', u.name);
@@ -555,8 +646,12 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                     setEdges(mappedEdges);
                     setComments(mappedComments);
                     
-                    if (data.project && data.project.backgroundColor) {
-                        setConfig(prev => ({ ...prev, backgroundColor: data.project.backgroundColor }));
+                    if (data.project) {
+                        const projConf = data.project.config || {};
+                        setConfig(prev => ({ 
+                            ...prev, 
+                            ...projConf, 
+                        }));
                     }
 
                     // Sync to local DB for offline access
@@ -601,8 +696,33 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                         setConnectionStatus('reconnecting');
                         await new Promise(r => setTimeout(r, 2000));
                     } else {
+                         // Check if error is specifically NO_ACCESS (403 or similar)
+                         // The apiErr object might have response data if it's an axios/fetch error wrapper
+                         if (errMsg.includes('NO_ACCESS') || errMsg.includes('no access') || errMsg.includes('403')) {
+                             setConnectionStatus('failed'); // or disconnected
+                             // setLiveMode(false); // Maybe force offline?
+                             // Don't clear room ID immediately so user sees where they failed? 
+                             // Or clear it as requested:
+                             setCurrentRoomId(null);
+                             sessionStorage.removeItem('room_id_session');
+                             
+                             // Clean URL parameters
+                             const url = new URL(window.location.href);
+                             url.searchParams.delete('room');
+                             url.searchParams.delete('token');
+                             window.history.replaceState({}, document.title, url.pathname);
+
+                             alert("You don't have access to this room.");
+                             setIsLoading(false);
+                             return;
+                         }
+
                         setConnectionStatus('failed'); // Triggers failure UI
                         setIsLoading(false);
+                        
+                        // Clean URL on permanent failure to prevent F5 loops
+                        // Only if we suspect access issue (404/Empty graph is not access issue per se, but connection failed usually implies it after retries)
+                        // Actually, let's just leave the URL alone unless it's strictly NO_ACCESS
                     }
                }
            }
@@ -691,7 +811,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
             id: Math.random().toString(36).substr(2, 9),
             action,
             details,
-            author: config.userProfile.name || 'Unknown',
+            author: userProfile.name || 'Unknown',
             isRevertAction: isRevert,
             timestamp: Date.now(),
             snapshot
@@ -995,15 +1115,20 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     const updateConfig = (newConfig: AppSettings) => {
         setConfig(newConfig);
         localStorage.setItem('app_config', JSON.stringify(newConfig));
-        // Also update the fallback name if it's being set here
-        if (newConfig.userProfile?.name && newConfig.userProfile.name !== 'User') {
-            localStorage.setItem('my_user_name', newConfig.userProfile.name);
+        
+        // Sync with backend if in a room
+        if (currentRoomId && isLiveMode) {
+             api.put(`/graph/${currentRoomId}/config`, { config: newConfig })
+                .catch(e => console.error("Config Sync Failed", e));
         }
     };
 
     const updateProjectBackground = async (color: string) => {
         // Optimistic Update
-        setConfig(prev => ({ ...prev, backgroundColor: color }));
+        setConfig(prev => ({ 
+            ...prev, 
+            defaultColors: { ...prev.defaultColors, canvasBg: color } 
+        }));
         
         if (currentRoomId && isLiveMode) {
             try {
@@ -1015,7 +1140,10 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         
         // Also save to local storage as fallback/default for local
         if (!currentRoomId) {
-             const newConf = { ...config, backgroundColor: color };
+             const newConf = { 
+                 ...config, 
+                 defaultColors: { ...config.defaultColors, canvasBg: color } 
+             };
              localStorage.setItem('app_config', JSON.stringify(newConf));
         }
     };
@@ -1038,7 +1166,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
             isReadOnly, setReadOnly,
             t, isAuthenticated, authProvider, savedProjects, activeUsers, login, logout,
             isTransitioningToLive, setTransitioningToLive, clearHistory,
-            isUserVisible, toggleUserVisibility
+            isUserVisible, toggleUserVisibility,
+            userProfile, updateUserProfile, userId, mySocketId
         }}>
             {children}
         </GraphContext.Provider>

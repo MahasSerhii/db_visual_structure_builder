@@ -1,7 +1,16 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export interface INodeProperty {
+    id: string;
+    name: string;
+    type: string;
+    defaultValue?: string | number | boolean;
+    [key: string]: unknown;
+}
+
 export interface INode extends Document {
-  projectId: mongoose.Schema.Types.ObjectId;
+  _id: mongoose.Types.ObjectId;
+  projectId: mongoose.Types.ObjectId;
   nodeId: string; // The FE UUID
   title: string;
   description?: string;
@@ -9,10 +18,10 @@ export interface INode extends Document {
   x: number;
   y: number;
   docLink?: string;
-  props: any[];
+  props: INodeProperty[];
   isDeleted: boolean;
   deletedAt?: Date;
-  createdBy: mongoose.Schema.Types.ObjectId;
+  createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }

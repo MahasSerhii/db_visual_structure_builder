@@ -32,7 +32,7 @@ export const DataTab: React.FC = () => {
         config, nodes, edges, comments, refreshData, isLiveMode, setLiveMode, setGraphData, 
         currentRoomId, setCurrentRoomId, isReadOnly, setReadOnly, t, isAuthenticated, login, logout, 
         activeUsers, connectionStatus, setTransitioningToLive, updateConfig, updateProjectBackground,
-        isUserVisible, toggleUserVisibility 
+        isUserVisible, toggleUserVisibility, userProfile, userId: currentUserId, mySocketId
     } = useGraph();
     const { showToast } = useToast();
     // Initialize Local RoomID from Context if we are in Live Mode
@@ -53,6 +53,7 @@ export const DataTab: React.FC = () => {
     // Room Access Management
     const [roomAccessUsers, setRoomAccessUsers] = useState<any[]>([]);
     const [isRemoveUserConfirmOpen, setIsRemoveUserConfirmOpen] = useState(false);
+    const [isLeaveRoomConfirmOpen, setIsLeaveRoomConfirmOpen] = useState(false);
     const [userToRemove, setUserToRemove] = useState<{ accessId: string; name: string } | null>(null);
     
     // connectedUsers removed - using Context
@@ -280,7 +281,7 @@ export const DataTab: React.FC = () => {
                     configStr: '', // Legacy/Removed
                     origin: window.location.origin + window.location.pathname,
                     permissions: linkAllowEdit ? 'rw' : 'r',
-                    hostName: config.userProfile.name,
+                    hostName: userProfile.name,
                     projectName: 'Visual DB Project' // We could add a project name field
                 })
             });
@@ -353,7 +354,7 @@ export const DataTab: React.FC = () => {
                         id: targetRoomId,
                         name: `Project ${targetRoomId.substring(0,6)}`,
                         configStr: '', // Legacy
-                        author: config.userProfile.name,
+                        author: userProfile.name,
                         url: window.location.origin + window.location.pathname,
                         role: role || (isClientMode ? 'guest' : 'host') // Explicitly send role
                     }
@@ -446,7 +447,7 @@ export const DataTab: React.FC = () => {
 
         // Determine Identity & Role
         let role: 'host' | 'guest' = isClientMode ? 'guest' : 'host'; // Default
-        let displayName = config.userProfile.name;
+        let displayName = userProfile.name;
 
         // Verify Access & Role from Backend
         if (effectiveToken && roomId) {
@@ -513,7 +514,7 @@ export const DataTab: React.FC = () => {
         const userObj = {
             id: userId!, 
             name: displayName ,
-            color: config.userProfile.color,
+            color: userProfile.color,
             lastActive: Date.now(),
             role: role,
             visible: isUserVisible
@@ -651,7 +652,7 @@ export const DataTab: React.FC = () => {
                     configStr: '',
                     origin: window.location.origin + window.location.pathname,
                     permissions: linkAllowEdit ? 'rw' : 'r',
-                    hostName: config.userProfile.name,
+                    hostName: userProfile.name,
                     projectName: 'Visual DB Project',
                     skipEmail: true // Don't send email, just return link
                 })
@@ -724,7 +725,6 @@ export const DataTab: React.FC = () => {
                  
                  // Construct minimal config from remote project settings
                  const rConfig = data.project?.config || {};
-                 if (data.project?.backgroundColor) rConfig.backgroundColor = data.project.backgroundColor;
 
                  // Normalization for comparison: Sort by ID and remove metadata + normalize nulls
                  const clean = (arr: any[]) => arr.map(item => {
@@ -747,8 +747,8 @@ export const DataTab: React.FC = () => {
                  const remoteNodesClean = clean(rNodes);
                  
                  // Config comparison
-                 const cleanLocalConfig = { backgroundColor: config.backgroundColor };
-                 const cleanRemoteConfig = { backgroundColor: rConfig.backgroundColor };
+                 const cleanLocalConfig = { backgroundColor: config.defaultColors?.canvasBg };
+                 const cleanRemoteConfig = { backgroundColor: rConfig.defaultColors?.canvasBg };
                  
                  const hasConfigDiff = JSON.stringify(cleanLocalConfig) !== JSON.stringify(cleanRemoteConfig);
                  const hasNodeDiff = JSON.stringify(localNodesClean) !== JSON.stringify(remoteNodesClean);
@@ -1059,6 +1059,41 @@ export const DataTab: React.FC = () => {
         }
     };
 
+    const handleLeaveRoom = (accessId: string, userName: string) => {
+        setUserToRemove({ accessId, name: userName });
+        setIsLeaveRoomConfirmOpen(true);
+    };
+
+    const confirmLeaveRoom = async () => {
+        if (!userToRemove || !currentRoomId) return;
+
+        try {
+            const response = await fetch(
+                `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/graph/${currentRoomId}/access/${userToRemove.accessId}`,
+                {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+                    }
+                }
+            );
+
+            if (response.ok) {
+                showToast("You have left the room", "success");
+                handleDisconnect();
+            } else {
+                const error = await response.json();
+                showToast(error.error || "Failed to leave room", "error");
+            }
+        } catch (err) {
+            console.error("Error leaving room", err);
+            showToast("Failed to leave room", "error");
+        } finally {
+            setIsLeaveRoomConfirmOpen(false);
+            setUserToRemove(null);
+        }
+    };
+
     // Fetch room access users when connected to live mode
     useEffect(() => {
         if (isLiveMode && isConnected && currentRoomId && !isClientMode) {
@@ -1143,9 +1178,12 @@ export const DataTab: React.FC = () => {
                             isLiveMode={isLiveMode}
                             isInvisible={!isUserVisible}
                             toggleInvisible={toggleInvisible}
-                            config={config}
+                            userProfile={userProfile}
+                            currentUserId={currentUserId}
+                            mySocketId={mySocketId}
                             isProjectAuthor={!isClientMode && isLiveMode}
                             onRemoveUser={handleRemoveUserFromRoom}
+                            onLeaveRoom={handleLeaveRoom}
                             roomAccessUsers={roomAccessUsers}
                         />
                      </>
@@ -1235,6 +1273,20 @@ export const DataTab: React.FC = () => {
                 title={t('user.removeTitle')}
                 message={`${t('user.removeMessage')} "${userToRemove?.name || ''}"?`}
                 confirmText={t('user.removeConfirm')}
+                cancelText={t('cancel')}
+                isDanger={true}
+            />
+
+            <ConfirmationModal
+                isOpen={isLeaveRoomConfirmOpen}
+                onClose={() => {
+                    setIsLeaveRoomConfirmOpen(false);
+                    setUserToRemove(null);
+                }}
+                onConfirm={confirmLeaveRoom}
+                title={t('Leave Room') || "Leave Room"}
+                message={`${t('Are you sure you want to leave this room? You will lose access to this project.')}`}
+                confirmText={t('Leave') || "Leave"}
                 cancelText={t('cancel')}
                 isDanger={true}
             />

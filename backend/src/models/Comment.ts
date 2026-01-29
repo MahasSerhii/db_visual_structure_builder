@@ -1,7 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IComment extends Document {
-  projectId: mongoose.Schema.Types.ObjectId;
+  _id: mongoose.Types.ObjectId;
+  projectId: mongoose.Types.ObjectId;
   commentId: string;
   text: string;
   x: number;
@@ -11,6 +12,8 @@ export interface IComment extends Document {
   // Frontend sends 'author' string sometimes. Let's keep it flexible or map it.
   isDeleted: boolean;
   deletedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const CommentSchema: Schema = new Schema({

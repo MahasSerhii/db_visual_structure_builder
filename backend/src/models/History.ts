@@ -1,14 +1,15 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IHistory extends Document {
-  projectId: mongoose.Schema.Types.ObjectId;
+  _id: mongoose.Types.ObjectId;
+  projectId: mongoose.Types.ObjectId;
   action: string;
   details: string;
   authorId: string; // User ID or Name
   entityType?: 'node' | 'edge' | 'comment' | 'project';
   entityId?: string;
-  previousState?: any;
-  newState?: any;
+  previousState?: Record<string, unknown> | null;
+  newState?: Record<string, unknown> | null;
   timestamp: Date;
 }
 

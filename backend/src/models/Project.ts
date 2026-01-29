@@ -1,12 +1,24 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export interface ProjectConfig {
+    defaultColors?: {
+        canvasBg?: string;
+        nodeBg?: string;
+        [key: string]: string | undefined;
+    };
+    // Explicitly exclude userProfile from config as it should be local only
+    userProfile?: never;
+    [key: string]: unknown;
+}
+
 export interface IProject extends Document {
+  _id: mongoose.Types.ObjectId;
   roomId: string;
   name: string;
-  ownerId: mongoose.Schema.Types.ObjectId;
+  ownerId: mongoose.Types.ObjectId;
   description?: string;
   // backgroundColor moved to config
-  config?: any; // JSON config snapshot
+  config?: ProjectConfig; // JSON config snapshot
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;

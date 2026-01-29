@@ -61,11 +61,22 @@ export interface CommentReply {
     createdAt: number;
 }
 
+export enum UserRoleType {
+    HOST = 'host',
+    OWNER = 'owner',
+    ADMIN = 'admin',
+    EDITOR = 'editor',
+    RW = 'rw',
+    VIEWER = 'viewer',
+    R = 'r',
+    GUEST = 'guest'
+}
+
 export interface User {
   id: string; // email or uid
   name: string;
   color: string;
-  role?: 'host' | 'guest' | 'admin';
+  role?: string;
   lastActive: number;
   visible?: boolean;
 }
@@ -83,17 +94,18 @@ export interface SavedProject {
 export interface AppSettings {
   language: string;
   theme: 'light' | 'dark';
-  backgroundColor?: string;
-  userProfile: {
-    name: string;
-    color: string;
-    lastUpdated?: number; // Timestamp for sync
-  };
+  // userProfile removed - now stored in separate local state
   defaultColors: {
     componentBg: string;
     propertyText: string;
     canvasBg?: string;
   };
+}
+
+export interface UserProfile {
+    name: string;
+    color: string;
+    lastUpdated?: number;
 }
 
 export interface Translation {

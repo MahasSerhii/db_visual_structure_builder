@@ -1,7 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IEdge extends Document {
-  projectId: mongoose.Schema.Types.ObjectId;
+  _id: mongoose.Types.ObjectId;
+  projectId: mongoose.Types.ObjectId;
   edgeId: string;
   source: string; // ID of source node
   target: string; // ID of target node
@@ -10,7 +11,9 @@ export interface IEdge extends Document {
   targetProp?: string;
   isDeleted: boolean;
   deletedAt?: Date;
-  createdBy: mongoose.Schema.Types.ObjectId;
+  createdBy: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const EdgeSchema: Schema = new Schema({

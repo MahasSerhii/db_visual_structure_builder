@@ -3,8 +3,8 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import User, { IUser } from '../models/User';
-import Project from '../models/Project';
-import Access from '../models/Access';
+import Project, { IProject } from '../models/Project';
+import Access, { IAccess, IAccessUser } from '../models/Access';
 import { sendEmail } from '../utils/email';
 
 // Interface for the decoded User from JWT (payload)
@@ -70,20 +70,36 @@ router.post('/invite', authenticate, async (req: Request, res: Response) => {
         }
         
         // Create or update Access record with the user ID
-        const accessResult = await Access.findOneAndUpdate(
-            { projectId: project._id as any, userId: user._id as any },
-            { 
-                $set: {
-                    projectId: project._id,
-                    userId: user._id,
-                    invitedEmail: email, // Keep for reference
-                    role: permissions === 'rw' ? 'writer' : 'viewer',
-                    isDeleted: false
-                }
-            },
-            { upsert: true, new: true }
-        );
-        console.log(`[Access Created/Updated] AccessID: ${accessResult._id}, Role: ${accessResult.role}, ProjectID: ${accessResult.projectId}, UserID: ${accessResult.userId}`);
+        let accessDoc = await Access.findOne({ projectId: project._id as any });
+        
+        if (!accessDoc) {
+             // Should verify authorId (Project owner)
+             accessDoc = new Access({
+                projectId: project._id,
+                authorId: project.ownerId,
+                access_granted: []
+             });
+        }
+        
+        const newRole = permissions === 'rw' ? 'Editor' : 'Viewer';
+        const existingIndex = accessDoc.access_granted.findIndex(u => u.userId.toString() === user._id.toString());
+        
+        if (existingIndex > -1) {
+            accessDoc.access_granted[existingIndex].role = newRole as any; // Cast as any because role is strictly typed in IAccessUser
+            accessDoc.access_granted[existingIndex].invitedEmail = email;
+        } else {
+            accessDoc.access_granted.push({
+                userId: user._id as any,
+                authorised: false,
+                role: newRole as any,
+                visible: true,
+                invitedEmail: email,
+                joinedAt: new Date()
+            });
+        }
+        
+        await accessDoc.save();
+        console.log(`[Access Updated] ProjectID: ${project._id}, UserID: ${user._id}, Role: ${newRole}`);
 
         const link = `${origin}?invite_token=${inviteToken}`;
         console.log(`[Invite Generated] Link: ${link}`);
@@ -189,11 +205,20 @@ router.post('/register', async (req: Request, res: Response) => {
                 if (decoded.roomId) {
                      const project = await Project.findOne({ roomId: decoded.roomId });
                      if (project) {
-                         await Access.findOneAndUpdate(
-                             { projectId: project._id as any, userId: user._id as any },
-                             { $set: { userId: user._id } }, 
-                             { new: true }
-                         );
+                         // Find access doc
+                        const accessDoc = await Access.findOne({ projectId: project._id as any });
+                        if (accessDoc) {
+                             // Find invited user by previous dummy ID or email?
+                             // Invite token logic creates access record with pre-reg user ID. 
+                             // So user._id should already match if we authorized correctly.
+                             // But if they came via invite link but registered with different email -> complex.
+                             // Assuming standard flow:
+                             
+                             // Just ensure they are in the list?
+                             // Current registration logic re-uses the user record if email matches.
+                             
+                             // Update joinedAt?
+                        }
                      }
                 }
             } catch(e) {
@@ -232,14 +257,7 @@ router.post('/social-login', async (req: Request, res: Response) => {
              try {
                 const decoded = jwt.verify(inviteToken, JWT_SECRET) as UserPayload & { roomId: string };
                 if (decoded.roomId) {
-                     const project = await Project.findOne({ roomId: decoded.roomId });
-                     if (project) {
-                         await Access.findOneAndUpdate(
-                             { projectId: project._id as any, invitedEmail: email },
-                             { userId: user._id }, 
-                             { new: true }
-                         );
-                     }
+                     // Logic handled by normal flow if they already exist
                 }
             } catch(e) {}
         }
@@ -247,15 +265,21 @@ router.post('/social-login', async (req: Request, res: Response) => {
         const token = jwt.sign({ email: user.email, id: user._id }, JWT_SECRET, { expiresIn: '30d' });
         
         const ownedProjects = await Project.find({ ownerId: user._id as any });
-        const accessRecords = await Access.find({ userId: user._id as any }).populate('projectId');
+        
+        // Find projects where user has access
+        const accessRecords = await Access.find({ "access_granted.userId": user._id as any }).populate('projectId');
         
         const projects = [
             ...ownedProjects.map(p => ({
                 id: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
-            ...accessRecords.map((a: any) => ({
-                id: a.projectId.roomId, name: a.projectId.name, role: a.role, lastAccessed: a.updatedAt
-            }))
+            ...accessRecords.map((record) => {
+                 const a = record as unknown as (IAccess & { projectId: IProject });
+                 const u = a.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
+                 return {
+                    id: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
+                 };
+            })
         ];
         
         res.json({ token, user, projects });
@@ -337,15 +361,19 @@ router.post('/login', async (req: Request, res: Response) => {
         const token = jwt.sign({ email: user.email, id: user._id }, JWT_SECRET, { expiresIn });
         
         const ownedProjects = await Project.find({ ownerId: user._id as any });
-        const accessRecords = await Access.find({ userId: user._id as any }).populate('projectId');
+        const accessRecords = await Access.find({ "access_granted.userId": user._id as any }).populate('projectId');
         
         const projects = [
             ...ownedProjects.map(p => ({
                 id: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
-            ...accessRecords.map((a: any) => ({
-                id: a.projectId.roomId, name: a.projectId.name, role: a.role, lastAccessed: a.updatedAt
-            }))
+            ...accessRecords.map((record) => {
+                 const a = record as unknown as (IAccess & { projectId: IProject });
+                 const u = a.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
+                 return {
+                    id: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
+                 };
+            })
         ];
 
         res.json({ token, user, projects });
@@ -372,29 +400,29 @@ router.post('/verify-access', async (req: Request, res: Response) => {
        }
        
        // Check access by userId first
-       let access = await Access.findOne({ 
+       let accessDoc = await Access.findOne({ 
            projectId: project._id as any, 
-           userId: user._id as any,
            isDeleted: false 
        });
-       
-       // If not found by userId, check by email (for invited users)
-       if (!access) {
-           access = await Access.findOne({ 
-               projectId: project._id as any, 
-               invitedEmail: user.email,
-               isDeleted: false 
-           });
+
+       let accessUser: IAccessUser | undefined;
+       if (accessDoc) {
+           accessUser = accessDoc.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
            
-           // If found by email, update userId to link the account
-           if (access) {
-               access.userId = user._id as any;
-               await access.save();
-               console.log(`[Access Linked] User ${user.email} linked to Access record`);
+           if (!accessUser && user!.email) {
+                // Check if invited by email
+                const index = accessDoc.access_granted.findIndex((participant) => participant.invitedEmail === user!.email);
+                if (index > -1) {
+                    // Link
+                    accessDoc.access_granted[index].userId = user!._id;
+                    await accessDoc.save();
+                    console.log(`[Access Linked] User ${user!.email} linked to Access record`);
+                    accessUser = accessDoc.access_granted[index];
+                }
            }
        }
        
-       if (access) return res.json({ allowed: true, role: access.role });
+       if (accessUser) return res.json({ allowed: true, role: accessUser.role });
        
        res.json({ allowed: false });
     } catch(e) { 

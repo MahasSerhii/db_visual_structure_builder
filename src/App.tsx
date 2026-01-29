@@ -21,7 +21,7 @@ import { Chatbot } from './components/Chatbot/Chatbot';
 
 const MainLayout: React.FC = () => {
     const { 
-        updateNode, deleteNode, nodes, addNode, comments, config, updateConfig, 
+        updateNode, deleteNode, nodes, addNode, comments, config, updateConfig, userProfile,
         t, isAuthenticated, login, isLoading, connectionStatus, retryConnection, 
         isLiveMode, setLiveMode, isTransitioningToLive 
     } = useGraph();  
@@ -65,8 +65,8 @@ const MainLayout: React.FC = () => {
     // Notifications Logic
     const unreadCount = React.useMemo(() => {
         // Count comments not by me
-        return (comments || []).filter(c => c.author.name !== config.userProfile.name && !c.isResolved).length;
-    }, [comments, config.userProfile.name]);
+        return (comments || []).filter(c => c.author.name !== userProfile.name && !c.isResolved).length;
+    }, [comments, userProfile.name]);
 
     React.useEffect(() => {
         if (!isAuthenticated) {

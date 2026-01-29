@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IUser extends Document {
   // uid field removed in favor of _id
+  _id: mongoose.Types.ObjectId;
   email: string;
   name: string;
   color: string;

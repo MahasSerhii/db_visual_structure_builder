@@ -22,7 +22,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
     const svgRef = useRef<SVGSVGElement>(null);
     const gRef = useRef<SVGGElement>(null);
     const simulationRef = useRef<d3.Simulation<any, any> | null>(null);
-    const { nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, addComment, updateComment, deleteComment, config, activeCommentId, setActiveCommentId, isLiveMode, currentRoomId, updateProjectBackground } = useGraph();
+    const { nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, addComment, updateComment, deleteComment, config, activeCommentId, setActiveCommentId, isLiveMode, currentRoomId, updateProjectBackground, userProfile } = useGraph();
     const { showToast } = useToast();
     const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
     
@@ -32,12 +32,14 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
     const addCommentRef = useRef(addComment);
     const setActiveCommentIdRef = useRef(setActiveCommentId);
     const configRef = useRef(config);
+    const userProfileRef = useRef(userProfile);
 
     useEffect(() => { updateNodeRef.current = updateNode; }, [updateNode]);
     useEffect(() => { updateEdgeRef.current = updateEdge; }, [updateEdge]);
     useEffect(() => { addCommentRef.current = addComment; }, [addComment]);
     useEffect(() => { setActiveCommentIdRef.current = setActiveCommentId; }, [setActiveCommentId]);
     useEffect(() => { configRef.current = config; }, [config]);
+    useEffect(() => { userProfileRef.current = userProfile; }, [userProfile]);
 
     // D3 Setup & Re-rendering
     useEffect(() => {
@@ -216,7 +218,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                      id,
                      x, y,
                      content: "New comment",
-                     author: { name: configRef.current.userProfile.name, color: configRef.current.userProfile.color },
+                     author: { name: userProfileRef.current.name, color: userProfileRef.current.color },
                      targetType: 'canvas',
                      createdAt: Date.now()
                  });
@@ -532,7 +534,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                      addCommentRef.current({
                          id, x, y,
                          content: "New comment",
-                         author: { name: configRef.current.userProfile.name, color: configRef.current.userProfile.color },
+                         author: { name: userProfileRef.current.name, color: userProfileRef.current.color },
                          targetId: d.id,
                          targetType: 'edge',
                          createdAt: Date.now()
@@ -606,7 +608,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                      x: d.x, 
                      y: d.y - h/2 - 40,
                      content: "New comment",
-                     author: { name: configRef.current.userProfile.name, color: configRef.current.userProfile.color },
+                     author: { name: userProfileRef.current.name, color: userProfileRef.current.color },
                      targetId: d.id,
                      targetType: 'node',
                      createdAt: Date.now()
@@ -924,7 +926,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         
         sim.alpha(1).restart();
 
-    }, [nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, showToast, getNodeHeight, drawCurve, getLabelPos, getPropYOffset, onNodeClick, config.userProfile, isLocked]);
+    }, [nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, showToast, getNodeHeight, drawCurve, getLabelPos, getPropYOffset, onNodeClick, userProfile, isLocked]);
 
     // Handle Comment Thread Modal via Event (Hack for D3 interaction)
     // Listen to custom event from D3
@@ -941,7 +943,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             const newReply = {
                 id: crypto.randomUUID(),
                 content: text,
-                author: { name: config.userProfile.name, color: config.userProfile.color },
+                author: { name: userProfile.name, color: userProfile.color },
                 createdAt: Date.now()
             };
             updateComment({ ...comment, replies: [...(comment.replies || []), newReply] });
@@ -965,12 +967,12 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             id,
             x, y,
             content: "", 
-            author: { name: config.userProfile.name, color: config.userProfile.color },
+            author: { name: userProfile.name, color: userProfile.color },
             targetType: 'canvas',
             createdAt: Date.now()
         });
         setActiveCommentId(id);
-    }, [config.userProfile, addComment, setActiveCommentId]);
+    }, [userProfile, addComment, setActiveCommentId]);
 
     return (
         <>
@@ -984,7 +986,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             </div>
 
             <div className="relative w-full h-full">
-                <svg ref={svgRef} className="w-full h-full" style={{ backgroundColor: config.backgroundColor || config.defaultColors?.canvasBg || '#f8fafc' }}>
+                <svg ref={svgRef} className="w-full h-full" style={{ backgroundColor: config.defaultColors?.canvasBg || '#f8fafc' }}>
                     <defs></defs>
                     <g ref={gRef} />
                 </svg>
@@ -996,7 +998,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                         <input
                             type="color"
                             className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                            value={config.backgroundColor || config.defaultColors?.canvasBg || '#f8fafc'}
+                            value={config.defaultColors?.canvasBg || '#f8fafc'}
                             onChange={(e) => updateProjectBackground?.(e.target.value)}
                         />
                     </div>
@@ -1072,7 +1074,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                                             <div className="flex-1">
                                                  <div className="text-xs font-bold text-gray-700 flex justify-between dark:text-indigo-200">
                                                     {c.author.name}
-                                                    {c.author.name === config.userProfile.name && (
+                                                    {c.author.name === userProfile.name && (
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); deleteComment(c.id); setActiveCommentId(null); }}
                                                             className="text-gray-400 hover:text-red-500 opacity-0 group-hover/main:opacity-100 transition-opacity dark:text-indigo-400 dark:hover:text-red-400"
@@ -1093,7 +1095,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                                                 <div className="flex-1">
                                                     <div className="text-xs font-bold text-gray-700 flex justify-between dark:text-indigo-200">
                                                         {r.author.name}
-                                                        {r.author.name === config.userProfile.name && (
+                                                        {r.author.name === userProfile.name && (
                                                             <button 
                                                                 onClick={(e) => { 
                                                                     e.stopPropagation(); 

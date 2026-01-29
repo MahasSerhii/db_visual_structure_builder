@@ -7,7 +7,7 @@ interface WelcomeModalProps {
 }
 
 export const WelcomeModal: React.FC<WelcomeModalProps> = ({ isOpen, onClose }) => {
-    const { config, updateConfig, t } = useGraph();
+    const { updateUserProfile, t } = useGraph();
     const [nickname, setNickname] = useState('');
 
     if (!isOpen) return null;
@@ -17,15 +17,9 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({ isOpen, onClose }) =
         // NOTE: The backend will use this name if provided during registration, 
         // OR if login happens, the backend name might overwrite this if sync is active.
         const name = nickname.trim() || 'Guest';
-        updateConfig({
-            ...config,
-            userProfile: {
-                ...config.userProfile,
-                name: name,
-                // Only update timestamp if name actually changed? 
-                // Currently just refreshing it is fine.
-                lastUpdated: Date.now()
-            }
+        updateUserProfile({
+            name: name,
+            lastUpdated: Date.now()
         });
         
         // Also ensure username is in localStorage for immediate access

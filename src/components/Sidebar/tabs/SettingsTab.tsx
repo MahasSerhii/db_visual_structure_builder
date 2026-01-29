@@ -9,18 +9,18 @@ import { Moon, Sun, User, Palette, Globe, HelpCircle, Trash, RefreshCw, Key, Shi
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api') + '/auth';
 
 export const SettingsTab: React.FC = () => {
-    const { config, updateConfig, refreshData, t, logout, isAuthenticated, authProvider } = useGraph();
+    const { config, updateConfig, refreshData, t, logout, isAuthenticated, authProvider, userProfile, updateUserProfile } = useGraph();
     const { showToast } = useToast();
     
     // Local state for settings form
     // Initialize with stored name if config is default 'User' (which might haven't loaded yet or was reset)
     const [userName, setUserName] = useState<string>(() => {
         const storedName = localStorage.getItem('my_user_name');
-        return (config.userProfile.name && config.userProfile.name !== 'User') 
-            ? config.userProfile.name 
+        return (userProfile.name && userProfile.name !== 'User') 
+            ? userProfile.name 
             : (storedName || 'User');
     });
-    const [userColor, setUserColor] = useState<string>(config.userProfile.color);
+    const [userColor, setUserColor] = useState<string>(userProfile.color);
     
     // Security State
     const [email, setEmail] = useState<string | null>(null);
@@ -110,17 +110,17 @@ export const SettingsTab: React.FC = () => {
 
     // Sync local state with global config when it changes externally (e.g. initial load or server sync)
     useEffect(() => {
-        if (config.userProfile.name && config.userProfile.name !== 'User') {
+        if (userProfile.name && userProfile.name !== 'User') {
              // Only update if local is currently default/empty or strictly different (avoid overwrite while typing?)
              // Actually, for simplicity and correctness on load:
              if (userName === 'User' || userName === '') {
-                 setUserName(config.userProfile.name);
+                 setUserName(userProfile.name);
              }
         }
-        if (config.userProfile.color && config.userProfile.color !== userColor) {
-             setUserColor(config.userProfile.color);
+        if (userProfile.color && userProfile.color !== userColor) {
+             setUserColor(userProfile.color);
         }
-    }, [config.userProfile.name, config.userProfile.color]);
+    }, [userProfile.name, userProfile.color]);
 
     // Debounce updates for User Profile to avoid constant context updates
     useEffect(() => {
@@ -131,17 +131,13 @@ export const SettingsTab: React.FC = () => {
                  return;
             }
 
-            if (userName !== config.userProfile.name || userColor !== config.userProfile.color) {
+            if (userName !== userProfile.name || userColor !== userProfile.color) {
                 const now = Date.now();
-                // Update Local Context (This also updates localStorage.app_config and my_user_name via updateConfig)
-                updateConfig({
-                    ...config,
-                    userProfile: {
-                        ...config.userProfile,
-                        name: userName,
-                        color: userColor,
-                        lastUpdated: now 
-                    }
+                // Update Local Context
+                updateUserProfile({
+                    name: userName,
+                    color: userColor,
+                    lastUpdated: now 
                 });
 
                 // Update Backend (Persist)
@@ -160,7 +156,7 @@ export const SettingsTab: React.FC = () => {
             }
         }, 500);
         return () => clearTimeout(timer);
-    }, [userName, userColor, email, config]); // added config to deps to ensure we have latest version
+    }, [userName, userColor, email, userProfile]);
 
 
 
