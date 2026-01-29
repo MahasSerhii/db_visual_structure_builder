@@ -140,23 +140,18 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
         .filter(u => u.isMe || u.isVisible)
         .filter((user, index, self) => {
             // Deduplicate logic:
-            
-            // 1. Prefer deduplication by socketId (if available) - unique connection
-            if (user.id) {
-                return index === self.findIndex(t => t.id === user.id);
-            }
 
-            // 2. Prefer deduplication by userId if available
+            // 1. Priority: Deduplicate by User ID (Merge multiple tabs of same logged-in user)
             if (user.userId) {
                 return index === self.findIndex(t => t.userId === user.userId);
             }
 
-            // 3. If it's Me (and no userId on some record?), deduplicate by isMe flag
+            // 2. Priority: Deduplicate "Me" (Merge multiple My Guest tabs)
             if (user.isMe) {
                  return index === self.findIndex(t => t.isMe);
             }
 
-            // 4. Fallback: deduplicate by name+color
+            // 3. Fallback: deduplicate by name+color
             return index === self.findIndex((t) => (
                 t.name === user.name && t.color === user.color
             ));

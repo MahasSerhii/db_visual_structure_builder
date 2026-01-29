@@ -38,12 +38,13 @@ export const DataTab: React.FC = () => {
     // Initialize Local RoomID from Context if we are in Live Mode
     const [roomId, setRoomId] = useState(() => {
         if (isLiveMode && currentRoomId) return currentRoomId;
-        return sessionStorage.getItem('room_id_session') || '';
+        // Check session storage first (current tab), then fall back to local storage (cross-tab persistence)
+        return sessionStorage.getItem('room_id_session') || localStorage.getItem('last_active_room_id') || '';
     });
 
     // Always start disconnected on mount to ensure fresh socket connection on reload
     // BUT if we have a session room, start as 'Restoring' to hide the input
-    const [isRestoringSession, setIsRestoringSession] = useState(() => !!sessionStorage.getItem('room_id_session'));
+    const [isRestoringSession, setIsRestoringSession] = useState(() => !!(sessionStorage.getItem('room_id_session') || localStorage.getItem('last_active_room_id')));
     const [isConnected, setIsConnected] = useState(false);
     
     const [isCSVModalOpen, setCSVModalOpen] = useState(false);
@@ -208,7 +209,18 @@ export const DataTab: React.FC = () => {
         const timer = setTimeout(() => {
             if(roomId && !isConnected && !isConnecting) {
                  const storedSessionRoom = sessionStorage.getItem('room_id_session');
-                 const shouldAutoConnect = isClientMode || (storedSessionRoom && storedSessionRoom === roomId);
+                 const storedLocalRoom = localStorage.getItem('last_active_room_id');
+                 
+                 // Persist to session storage if found in local storage (cross-tab sync)
+                 if (!storedSessionRoom && storedLocalRoom && storedLocalRoom === roomId) {
+                     sessionStorage.setItem('room_id_session', roomId);
+                 }
+
+                 // Check if valid to auto-connect
+                 const shouldAutoConnect = isClientMode || (
+                     (storedSessionRoom && storedSessionRoom === roomId) ||
+                     (storedLocalRoom && storedLocalRoom === roomId)
+                 );
 
                  if (shouldAutoConnect) {
                      const pref = sessionStorage.getItem('preferred_mode');
@@ -365,8 +377,10 @@ export const DataTab: React.FC = () => {
     // handleInitFirebase removed
 
 
-    const handleConnect = async (forceLiveMode: boolean = true, tokenOverride?: string) => {
-        if (!roomId) {
+    const handleConnect = async (forceLiveMode: boolean = true, tokenOverride?: string, roomIdOverride?: string) => {
+        const targetConnectRoomId = roomIdOverride || roomId;
+
+        if (!targetConnectRoomId) {
             showToast("Room ID is missing", "error");
             setIsRestoringSession(false);
             return;
@@ -513,17 +527,18 @@ export const DataTab: React.FC = () => {
         }; */
 
         // Update Context to trigger Socket Connection & Data Loading
-        setCurrentRoomId(roomId);
+        setCurrentRoomId(targetConnectRoomId);
         setLiveMode(isLive);
 
         // Mark as Connected (Data will load via Context)
         setIsConnected(true); 
-        sessionStorage.setItem('room_id_session', roomId);
+        sessionStorage.setItem('room_id_session', targetConnectRoomId);
+        localStorage.setItem('last_active_room_id', targetConnectRoomId); // Persist across tabs
         sessionStorage.setItem('preferred_mode', isLive ? 'live' : 'local');
         setIsRestoringSession(false); 
 
         // Sync with Backend (Fire and Forget)
-        syncProjectWithBackend(roomId, role);
+        syncProjectWithBackend(targetConnectRoomId, role);
 
         // Clean Invite Token from URL if present
         const url = new URL(window.location.href);
