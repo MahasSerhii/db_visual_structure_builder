@@ -490,7 +490,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         // 1. Clear IndexedDB (Best Effort)
         try {
             await deleteWholeDB();
-        } catch (e) {
+        } catch(e: unknown) {
             console.error("Failed to delete DB on logout", e);
         }
 
@@ -503,6 +503,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         localStorage.removeItem('app_config');
         localStorage.removeItem('current_room_id');
         localStorage.removeItem('my_user_id');
+        localStorage.removeItem('my_user_name');
+        localStorage.removeItem('my_user_color');
 
         // 3. Reset State
         setIsAuthenticated(false);
@@ -510,9 +512,11 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         setNodes([]);
         setEdges([]);
         setComments([]);
+        setUserProfile({ name: 'User', color: '#6366F1' });
         
-        // 4. Force Reload to ensure clean slate
-        window.location.reload();
+        // 4. Force Reload to ensure clean slate AND strip query params (token, room, etc.)
+        // This prevents auto-relogin from URL params
+        window.location.href = window.location.origin + window.location.pathname;
     }, []);
 
     // Global Active Comment State (for Thread Modal that can differ from List Modal)
