@@ -1,11 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ProjectConfig {
-    defaultColors?: {
-        canvasBg?: string;
-        nodeBg?: string;
-        [key: string]: string | undefined;
-    };
+    canvasBg?: string; // Direct property now
+    nodeBg?: string;
     // Explicitly exclude userProfile from config as it should be local only
     userProfile?: never;
     [key: string]: unknown;

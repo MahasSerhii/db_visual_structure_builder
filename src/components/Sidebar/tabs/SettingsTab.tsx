@@ -312,13 +312,10 @@ export const SettingsTab: React.FC = () => {
                         <input 
                             type="color" 
                             className="w-full h-6 border rounded cursor-pointer dark:border-slate-600" 
-                            value={config.defaultColors.componentBg || '#6366F1'}
+                            value={config.componentBg || '#6366F1'}
                             onChange={(e) => updateConfig({
                                 ...config,
-                                defaultColors: {
-                                    ...config.defaultColors,
-                                    componentBg: e.target.value
-                                }
+                                componentBg: e.target.value
                             })}
                         />
                     </div>
@@ -327,13 +324,10 @@ export const SettingsTab: React.FC = () => {
                         <input 
                             type="color" 
                             className="w-full h-6 border rounded cursor-pointer dark:border-slate-600" 
-                            value={config.defaultColors.propertyText || '#000000'}
+                            value={config.propertyText || '#000000'}
                             onChange={(e) => updateConfig({
                                 ...config,
-                                defaultColors: {
-                                    ...config.defaultColors,
-                                    propertyText: e.target.value
-                                }
+                                propertyText: e.target.value
                             })}
                         />
                     </div>
@@ -343,13 +337,10 @@ export const SettingsTab: React.FC = () => {
                      <input 
                         type="color" 
                         className="w-full h-6 border rounded cursor-pointer" 
-                        value={config.defaultColors.canvasBg || '#f8fafc'}
+                        value={userProfile.canvasBg || config.canvasBg || '#f8fafc'}
                         onChange={(e) => updateConfig({
                             ...config,
-                            defaultColors: {
-                                ...config.defaultColors,
-                                canvasBg: e.target.value
-                            }
+                            canvasBg: e.target.value
                         })}
                     />
                 </div>

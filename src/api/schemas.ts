@@ -1,14 +1,23 @@
 import { z } from 'zod';
-import { AppSettingsSchema, NodeDataSchema, EdgeDataSchema, CommentSchema } from '../utils/schemas';
+import { ProjectConfigSchema, NodeDataSchema, EdgeDataSchema, CommentSchema } from '../utils/schemas';
 
 // --- Auth Schemas ---
 
 export const AuthUserSchema = z.object({
     _id: z.string(),
+    id: z.string().optional(), // Allow id alias
     name: z.string(),
     email: z.string(),
     color: z.string().optional(),
-    profileUpdatedAt: z.number().optional()
+    avatar: z.string().optional(),
+    lastActive: z.number().optional(),
+    profileUpdatedAt: z.number().optional(),
+    // Preferences
+    language: z.string().optional(),
+    theme: z.enum(['light', 'dark']).optional(),
+    componentBg: z.string().optional(),
+    propertyText: z.string().optional(),
+    canvasBg: z.string().optional(),
 });
 
 export const AuthResponseSchema = z.object({
@@ -22,9 +31,14 @@ export const UserResponseSchema = z.object({
 });
 
 export const UpdateProfileRequestSchema = z.object({
-    name: z.string(),
-    color: z.string(),
-    profileUpdatedAt: z.number()
+    name: z.string().optional(),
+    color: z.string().optional(),
+    profileUpdatedAt: z.number().optional(),
+    language: z.string().optional(),
+    theme: z.enum(['light', 'dark']).optional(),
+    componentBg: z.string().optional(),
+    propertyText: z.string().optional(),
+    canvasBg: z.string().optional(),
 });
 
 // --- Graph Schemas ---
@@ -34,7 +48,7 @@ export const GraphProjectSchema = z.object({
     name: z.string(),
     ownerId: z.string(),
     isPublic: z.boolean(),
-    config: AppSettingsSchema.optional()
+    config: ProjectConfigSchema.optional()
 });
 
 export const GraphDataResponseSchema = z.object({
@@ -49,7 +63,7 @@ export const SyncGraphRequestSchema = z.object({
     nodes: z.array(NodeDataSchema),
     edges: z.array(EdgeDataSchema),
     comments: z.array(CommentSchema),
-    config: AppSettingsSchema.optional()
+    config: ProjectConfigSchema.optional()
 });
 
 export const SaveProjectRequestSchema = z.object({

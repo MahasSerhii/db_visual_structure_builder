@@ -250,8 +250,8 @@ router.put('/:projectId/node', authenticate, checkAccess(['Editor', 'Admin', 'ho
         if ((!existing || existing.isDeleted) && !affectedColor) {
              const conf = req.project.config || {};
 
-             if (conf.defaultColors && conf.defaultColors.nodeBg) {
-                 affectedColor = conf.defaultColors.nodeBg;
+             if (conf.nodeBg) {
+                 affectedColor = conf.nodeBg;
              }
         }
 
@@ -802,22 +802,20 @@ router.put('/:projectId/config', authenticate, checkAccess(['Editor', 'Admin', '
         if (!req.project) return res.status(401).json({ error: "Context missing" });
         const { config } = req.body;
 
-        // Merge with existing config
+        // Merge with existing config (Flat structure now)
         const currentConfig = req.project.config || {};
         const newConfig = { ...currentConfig, ...config };
-        
-        // Specifically update defaultColors structure
-        if (config.defaultColors) {
-            newConfig.defaultColors = {
-                 ...(typeof currentConfig.defaultColors === 'object' ? currentConfig.defaultColors : {}),
-                 ...config.defaultColors
-            };
-        }
 
         req.project.config = newConfig;
         req.project.markModified('config');
         
         await req.project.save();
+
+        // Also update User Preferred Canvas Background if present in config update
+        const userEmail = (req as AuthRequest).user?.email;
+        if (userEmail && config.canvasBg) {
+             await User.findOneAndUpdate({ email: userEmail }, { canvasBg: config.canvasBg });
+        }
 
         getIO().to(req.params.projectId).emit('project:settings', { config: newConfig });
         
@@ -834,22 +832,21 @@ router.put('/:projectId/background', authenticate, checkAccess(['Editor', 'Admin
         if (!req.project || !req.user) return res.status(401).json({ error: "Context missing" });
         const { color } = req.body;
         
-        // Update config.defaultColors.canvasBg instead of config.backgroundColor
+        // Update config.canvasBg
         const config = req.project.config || {};
-        
-        if (!config.defaultColors) config.defaultColors = {};
-        if (config.defaultColors) {
-            config.defaultColors.canvasBg = color;
-        }
-        
-        // Remove legacy backgroundColor if present
-        if ('backgroundColor' in config) delete config['backgroundColor'];
+        config.canvasBg = color;
         
         // Use markModified if config is Mixed type
         req.project.config = config;
         req.project.markModified('config');
         
         await req.project.save();
+        
+        // Also update User Preferred Canvas Background
+        const userEmail = (req as AuthRequest).user?.email;
+        if (userEmail) {
+            await User.findOneAndUpdate({ email: userEmail }, { canvasBg: color });
+        }
         
         const h = await History.create({
             projectId: req.project._id,

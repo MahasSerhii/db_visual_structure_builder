@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { 
     NodePropertySchema, NodeDataSchema, EdgeDataSchema, CommentSchema, 
     CommentReplySchema, UserRoleType as UserRoleTypeEnum, UserSchema, 
-    ActiveSessionUserSchema, SavedProjectSchema, AppSettingsSchema, 
+    ActiveSessionUserSchema, SavedProjectSchema, ProjectConfigSchema, 
     UserProfileSchema, TranslationSchema, RoomAccessUserSchema, 
     LanguageSchema 
 } from './schemas';
@@ -19,7 +19,10 @@ export type CommentReply = z.infer<typeof CommentReplySchema>;
 export type User = z.infer<typeof UserSchema>;
 export type ActiveSessionUser = z.infer<typeof ActiveSessionUserSchema>;
 export type SavedProject = z.infer<typeof SavedProjectSchema>;
-export type AppSettings = z.infer<typeof AppSettingsSchema>;
+
+// Project Config (Database / Sync Schema)
+export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
+
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 export type Translation = z.infer<typeof TranslationSchema>;
 export type RoomAccessUser = z.infer<typeof RoomAccessUserSchema>;

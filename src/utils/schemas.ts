@@ -81,20 +81,20 @@ export const CommentSchema = z.object({
     createdAt: z.number()
 });
 
-export const AppSettingsSchema = z.object({
-    language: z.string(),
-    theme: z.enum(['light', 'dark']),
-    defaultColors: z.object({
-        componentBg: z.string(),
-        propertyText: z.string(),
-        canvasBg: z.string().optional(),
-    })
+export const ProjectConfigSchema = z.object({
+    canvasBg: z.string().optional(),
 });
 
 export const UserProfileSchema = z.object({
     name: z.string(),
     color: z.string(),
-    lastUpdated: z.number().optional()
+    lastUpdated: z.number().optional(),
+    // Cached Preferences
+    language: z.string().optional(),
+    theme: z.enum(['light', 'dark']).optional(),
+    componentBg: z.string().optional(),
+    propertyText: z.string().optional(),
+    canvasBg: z.string().optional(),
 });
 
 export const UserSchema = z.object({
@@ -104,6 +104,12 @@ export const UserSchema = z.object({
     role: z.string().optional(),
     lastActive: z.number(),
     visible: z.boolean().optional(),
+    // Preferences
+    language: z.string().default('en'),
+    theme: z.enum(['light', 'dark']).default('light'),
+    componentBg: z.string().default('#6366F1'),
+    propertyText: z.string().default('#000000'),
+    canvasBg: z.string().optional(),
 });
 
 export const ActiveSessionUserSchema = z.object({

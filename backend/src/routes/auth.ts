@@ -259,7 +259,22 @@ router.post('/register', async (req: Request, res: Response) => {
         const token = jwt.sign({ email: user.email, id: user._id }, JWT_SECRET, { expiresIn: '30d' });
         
         console.log(`[Register Success] User: ${user.email} (ID: ${user._id})`);
-        res.json({ token, user, projects: [] });
+        
+        const userObj = {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            color: user.color,
+            avatar: user.avatar,
+            lastActive: user.lastActive?.getTime() || Date.now(),
+            language: user.language,
+            theme: user.theme,
+            componentBg: user.componentBg,
+            propertyText: user.propertyText,
+            canvasBg: user.canvasBg
+        };
+        
+        res.json({ token, user: userObj, projects: [] });
     } catch (e) { 
         console.error("Register Error Global:", e);
         res.status(500).json({ error: "Register Failed" }); 
@@ -317,7 +332,21 @@ router.post('/social-login', async (req: Request, res: Response) => {
             })
         ];
         
-        res.json({ token, user, projects });
+        const userObj = {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            color: user.color,
+            avatar: user.avatar,
+            lastActive: user.lastActive?.getTime() || Date.now(),
+            language: user.language,
+            theme: user.theme,
+            componentBg: user.componentBg,
+            propertyText: user.propertyText,
+            canvasBg: user.canvasBg
+        };
+        
+        res.json({ token, user: userObj, projects });
 
     } catch(e) {
         console.error("Social Login Error", e);
@@ -423,7 +452,21 @@ router.post('/login', async (req: Request, res: Response) => {
             })
         ];
 
-        res.json({ token, user, projects });
+        const userObj = {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            color: user.color,
+            avatar: user.avatar,
+            lastActive: user.lastActive?.getTime() || Date.now(),
+            language: user.language,
+            theme: user.theme,
+            componentBg: user.componentBg,
+            propertyText: user.propertyText,
+            canvasBg: user.canvasBg
+        };
+
+        res.json({ token, user: userObj, projects });
     } catch(e) { 
         console.error("Login Error", e);
         res.status(500).json({ error: "Login Error" }); 
@@ -487,7 +530,7 @@ router.post('/verify-access', async (req: Request, res: Response) => {
 
 router.put('/profile', authenticate, async (req: Request, res: Response) => {
     try {
-        const { name, color, profileUpdatedAt } = req.body;
+        const { name, color, profileUpdatedAt, language, theme, componentBg, propertyText, canvasBg } = req.body;
         // The user payload is in req.user, but we should verify it exists
         const userEmail = (req as AuthRequest).user?.email;
 
@@ -509,8 +552,30 @@ router.put('/profile', authenticate, async (req: Request, res: Response) => {
         if (profileUpdatedAt) user.profileUpdatedAt = new Date(profileUpdatedAt);
         else user.profileUpdatedAt = new Date(); // Always update timestamp on change
         
+        // Settings Updates
+        if (language) user.language = language;
+        if (theme) user.theme = theme;
+        if (componentBg) user.componentBg = componentBg;
+        if (propertyText) user.propertyText = propertyText;
+        if (canvasBg) user.canvasBg = canvasBg;
+
         await user.save();
-        res.json({ success: true, user });
+
+        const userObj = {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            color: user.color,
+            avatar: user.avatar,
+            lastActive: user.lastActive?.getTime() || Date.now(),
+            language: user.language,
+            theme: user.theme,
+            componentBg: user.componentBg,
+            propertyText: user.propertyText,
+            canvasBg: user.canvasBg
+        };
+
+        res.json({ success: true, user: userObj });
     } catch {
         res.status(500).json({ error: "Update Failed "});
     }
@@ -526,7 +591,21 @@ router.get('/user', authenticate, async (req: Request, res: Response) => {
 
         if (!user) return res.status(404).json({ error: "User not found" });
         
-        res.json({ user });
+        const userObj = {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            color: user.color,
+            avatar: user.avatar,
+            lastActive: user.lastActive?.getTime() || Date.now(),
+            language: user.language,
+            theme: user.theme,
+            componentBg: user.componentBg,
+            propertyText: user.propertyText,
+            canvasBg: user.canvasBg
+        };
+
+        res.json({ user: userObj });
     } catch {
         res.status(500).json({ error: "Fetch Failed" });
     }

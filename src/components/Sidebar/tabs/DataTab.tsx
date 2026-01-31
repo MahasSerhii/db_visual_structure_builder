@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGraph } from '../../../context/GraphContext';
 import { useToast } from '../../../context/ToastContext';
-import { NodeData, EdgeData, Comment, AppSettings, RoomAccessUser } from '../../../utils/types';
+import { NodeData, EdgeData, Comment, RoomAccessUser, ProjectConfig } from '../../../utils/types';
 // Firebase imports removed
 
 import { CSVModal } from '../../Modals/CSVModal';
@@ -86,7 +86,7 @@ export const DataTab: React.FC = () => {
     // Sync Conflict State
     const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
     const [isDisconnectModalOpen, setIsDisconnectModalOpen] = useState(false);
-    const [pendingRemoteData, setPendingRemoteData] = useState<{ nodes: NodeData[], edges: EdgeData[], comments: Comment[], config: AppSettings } | null>(null);
+    const [pendingRemoteData, setPendingRemoteData] = useState<{ nodes: NodeData[], edges: EdgeData[], comments: Comment[], config: ProjectConfig } | null>(null);
 
     // Auth State
     const [inviteEmail, setInviteEmail] = useState('');
@@ -527,7 +527,9 @@ export const DataTab: React.FC = () => {
                     await graphApi.initGraph({ 
                         roomId, 
                         name: `Project ${roomId}`,
-                        config: config
+                        config: {
+                            canvasBg: config.canvasBg
+                        }
                     });
                     showToast("New Project Room Created!", "success");
                 } catch {
@@ -755,7 +757,7 @@ export const DataTab: React.FC = () => {
                  const rComments = data?.comments || [];
                  
                  // Construct minimal config from remote project settings
-                 const rConfig = data.project?.config || {} as AppSettings;
+                 const rConfig = (data.project?.config || {}) as ProjectConfig;
 
                  // Normalization for comparison: Sort by ID and remove metadata + normalize nulls
                  const clean = (arr: Array<NodeData | EdgeData>) => arr.map(item => {
@@ -778,8 +780,8 @@ export const DataTab: React.FC = () => {
                  const remoteNodesClean = clean(rNodes);
                  
                  // Config comparison
-                 const cleanLocalConfig = { backgroundColor: config.defaultColors?.canvasBg };
-                 const cleanRemoteConfig = { backgroundColor: rConfig.defaultColors?.canvasBg };
+                 const cleanLocalConfig = { backgroundColor: config.canvasBg };
+                 const cleanRemoteConfig = { backgroundColor: rConfig.canvasBg };
                  
                  const hasConfigDiff = JSON.stringify(cleanLocalConfig) !== JSON.stringify(cleanRemoteConfig);
                  const hasNodeDiff = JSON.stringify(localNodesClean) !== JSON.stringify(remoteNodesClean);
@@ -808,7 +810,8 @@ export const DataTab: React.FC = () => {
                  } else {
                      // No conflict, safe to sync
                      // Push local config if we are "winning" or it's empty
-                     await graphApi.syncGraph(roomId, { nodes, edges, comments, config }, true);
+                     const projectConfig: ProjectConfig = { canvasBg: config.canvasBg };
+                     await graphApi.syncGraph(roomId, { nodes, edges, comments, config: projectConfig }, true);
                      showToast("Live Sync Enabled", "success");
                      setLiveMode(true);
                  }
@@ -865,7 +868,8 @@ export const DataTab: React.FC = () => {
         
         try {
             if (action === 'push_local') {
-                await graphApi.syncGraph(roomId, { nodes, edges, comments, config }, true);
+                const projectConfig: ProjectConfig = { canvasBg: config.canvasBg };
+                await graphApi.syncGraph(roomId, { nodes, edges, comments, config: projectConfig }, true);
                 showToast("Local data pushed to Live Room", "success");
             } else if (action === 'merge' && mergedData) {
                  const { nodes: n, edges: e, comments: c } = mergedData;
@@ -876,7 +880,8 @@ export const DataTab: React.FC = () => {
                  
                  // 2. Push to Backend (Source of Truth)
                  // Critical: Ensure backend is updated BEFORE we go live to prevent stale data pull
-                 await graphApi.syncGraph(roomId, { nodes: n, edges: e, comments: c, config }, true);
+                 const projectConfig: ProjectConfig = { canvasBg: config.canvasBg };
+                 await graphApi.syncGraph(roomId, { nodes: n, edges: e, comments: c, config: projectConfig }, true);
                  
                  showToast("Merged data synced successfully", "success");
 
@@ -888,13 +893,19 @@ export const DataTab: React.FC = () => {
                     setGraphData(n, e, c);
                     
                     // Update Config
-                    if (cfg && cfg.defaultColors.canvasBg) {
-                        updateProjectBackground(cfg.defaultColors.canvasBg);
+                    // Handle Project Background from Remote Config
+                    if (cfg && cfg.canvasBg) {
+                        updateProjectBackground(cfg.canvasBg);
                     }
                     if (cfg) {
                          // Merge other config if specific fields exist
-                         // ignoring local pref like theme/language
-                         updateConfig({ ...config, ...cfg, theme: config.theme, language: config.language });
+                         // ignoring local pref like theme/language which are User Scoped
+                         
+                         const nextConfig = { ...config };
+                         if (cfg.canvasBg) {
+                             nextConfig.canvasBg = cfg.canvasBg;
+                         }
+                         updateConfig(nextConfig);
                     }
 
                     showToast("Remote data loaded locally", "success");

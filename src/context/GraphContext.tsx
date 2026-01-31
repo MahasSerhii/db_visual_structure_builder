@@ -1,5 +1,5 @@
 import  { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
-import { NodeData, EdgeData, AppSettings, Comment, UserProfile, ActiveSessionUser, SavedProject, Language } from '../utils/types';
+import { NodeData, EdgeData, ProjectConfig, Comment, UserProfile, ActiveSessionUser, SavedProject, Language } from '../utils/types';
 import { AuthUser } from '../api/apiTypes';
 import { dbOp, initDB, deleteWholeDB } from '../utils/indexedDB';
 import { getTranslation } from '../utils/translations';
@@ -14,7 +14,7 @@ interface GraphContextType {
     nodes: NodeData[];
     edges: EdgeData[];
     comments: Comment[];
-    config: AppSettings;
+    config: Partial<UserProfile>;
     userProfile: UserProfile;
     userId: string | null;
     mySocketId: string | null;
@@ -36,7 +36,7 @@ interface GraphContextType {
     refreshData: (isCoolUpdate?: boolean) => Promise<void>;
     currentRoomId: string | null;
     setCurrentRoomId: (id: string | null) => void;
-    updateConfig: (newConfig: AppSettings) => void;
+    updateConfig: (newConfig: Partial<UserProfile>) => void;
     updateProjectBackground: (color: string) => Promise<void>;
     isLiveMode: boolean;
     setLiveMode: (isLive: boolean) => void;
@@ -130,17 +130,37 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
 
     // We keep local data in a ref or separate state to switch back
 
-    const [userProfile, setUserProfile] = useState<UserProfile>({
-        name: '', 
-        color: '#6366F1', 
+    const [userProfile, setUserProfile] = useState<UserProfile>(() => ({
+        name: localStorage.getItem('my_user_name') || '', 
+        color: localStorage.getItem('my_user_color') || '#6366F1', 
         lastUpdated: 0 
-    });
+    }));
     const [userId, setUserId] = useState<string | null>(() => localStorage.getItem('my_user_id'));
 
-    const [config, setConfig] = useState<AppSettings>({
-        language: 'en',
-        theme: 'light',
-        defaultColors: { componentBg: '#6366F1', propertyText: '#000000', canvasBg: '#f8fafc' }
+    const [config, setConfig] = useState<Partial<UserProfile>>(() => {
+        try {
+            const saved = localStorage.getItem('app_config');
+            if (saved) {
+                const parsed = JSON.parse(saved); 
+                // Migration: Check for legacy nested structure if loading old config
+                return {
+                    language: parsed.language || 'en',
+                    theme: parsed.theme || 'light',
+                    componentBg: parsed.componentBg || '#6366F1',
+                    propertyText: parsed.propertyText || '#000000',
+                    canvasBg: parsed.canvasBg || '#f8fafc'
+                };
+            }
+        } catch (e) {
+             console.warn("Could not load app_config", e);
+        }
+        return {
+            language: 'en',
+            theme: 'light',
+            componentBg: '#6366F1',
+            propertyText: '#000000',
+            canvasBg: '#f8fafc'
+        };
     });
     
     // Helper to update user profile locally and persisting to match expectations/logic
@@ -190,6 +210,57 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                 void e;
                 console.warn("Could not restore User ID from token");
             }
+        }
+    }, [isAuthenticated]);
+
+    // Restore User Profile from Backend on Mount/Auth
+    useEffect(() => {
+        if (isAuthenticated) {
+            authApi.getUser()
+                .then(response => {
+                    const u = response.user;
+                    if (u) {
+                        // HEAL: If server sends default color but local has custom, prefer local & sync
+                        const storedColor = localStorage.getItem('my_user_color');
+                        let finalColor = u.color || '#6366F1';
+                        
+                        // Check if we strictly have a better color locally
+                        if (storedColor && storedColor !== '#6366F1' && finalColor === '#6366F1') {
+                            console.log("Healing User Color: Restoring locally cached color override against server default.");
+                            finalColor = storedColor; // Keep local custom color
+                            authApi.updateProfile({ color: finalColor }).catch(() => {});
+                        }
+
+                        setUserProfile(prev => ({
+                            ...prev,
+                            // Ensure we merge to keep any local optimistic updates if any
+                            name: u.name,
+                            color: finalColor,
+                            language: u.language,
+                            theme: u.theme as 'light'|'dark',
+                            componentBg: u.componentBg,
+                            propertyText: u.propertyText,
+                            canvasBg: u.canvasBg,
+                            lastUpdated: u.profileUpdatedAt || Date.now()
+                        }));
+
+                        // Restore Configuration State from User Profile
+                        setConfig(prev => {
+                            const next = { ...prev };
+                            if (u.language) next.language = u.language;
+                            if (u.theme) next.theme = u.theme as 'light'|'dark';
+                            if (u.componentBg) next.componentBg = u.componentBg;
+                            if (u.propertyText) next.propertyText = u.propertyText;
+                            if (u.canvasBg) next.canvasBg = u.canvasBg;
+                            return next;
+                        });
+
+                        // Cache basic identity
+                        localStorage.setItem('my_user_name', u.name);
+                        localStorage.setItem('my_user_color', finalColor);
+                    }
+                })
+                .catch(e => console.warn("Background Profile Fetch Failed", e));
         }
     }, [isAuthenticated]);
     
@@ -402,19 +473,22 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  setIsLoading(false); // Stop loading spinner
              });
 
-             socket.on('project:settings', (data: { config?: AppSettings; backgroundColor?: string }) => {
+             socket.on('project:settings', (data: { config?: ProjectConfig; backgroundColor?: string }) => {
                  setConfig(prev => {
                      const next = { ...prev };
+                     
+                     // 1. Handle Background Color update (top priority override if present)
                      if (data.backgroundColor) {
-                         next.defaultColors = { ...next.defaultColors, canvasBg: data.backgroundColor };
+                         next.canvasBg = data.backgroundColor;
                      }
+                     
+                     // 2. Handle Config update (merge carefully)
                      if (data.config) {
-                         // Merge fields deeply if needed, or just top level
-                         // For defaultColors we might need deeper merge?
-                         // For now assume top level merge is fine or backend returns full object structure
-                         Object.assign(next, data.config);
-                         if (data.config.defaultColors) {
-                             next.defaultColors = { ...prev.defaultColors, ...data.config.defaultColors };
+                         // Warning: data.config from project settings only contains project-scoped values (canvasBg).
+                         // We must NOT overwrite local user preferences (componentBg, propertyText) which are missing in data.config
+                         
+                         if (data.config.canvasBg) {
+                             next.canvasBg = data.config.canvasBg;
                          }
                      }
                      return next;
@@ -466,19 +540,87 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
             const merged = { ...userProfile };
             if (dbUserProfile.name) merged.name = dbUserProfile.name;
             if (dbUserProfile.color) merged.color = dbUserProfile.color;
+            // Cache User Preferences into UserProfile state
+            if (dbUserProfile.language) merged.language = dbUserProfile.language;
+            if (dbUserProfile.theme) merged.theme = (dbUserProfile.theme as 'light' | 'dark'); // Cast as schema is strict
+            if (dbUserProfile.componentBg) merged.componentBg = dbUserProfile.componentBg;
+            if (dbUserProfile.propertyText) merged.propertyText = dbUserProfile.propertyText;
+            if (dbUserProfile.canvasBg) merged.canvasBg = dbUserProfile.canvasBg;
+            
             merged.lastUpdated = serverTime || Date.now();
 
             setUserProfile(merged);
             localStorage.setItem('my_user_name', merged.name);
             if (merged.color) localStorage.setItem('my_user_color', merged.color);
-            if (dbUserProfile._id) {
-                const uid = dbUserProfile._id;
+            if (dbUserProfile.id) {
+                const uid = dbUserProfile.id;
                 localStorage.setItem('my_user_id', uid);
                 setUserId(uid);
             }
-        } else {
-             // Local is newer -> Push to Server
+            // Sync Preferences
+            const newConfig = { ...config };
+            
+            let hasConfigChange = false;
+            
+            if (dbUserProfile.language && dbUserProfile.language !== config.language) {
+                newConfig.language = dbUserProfile.language;
+                hasConfigChange = true;
+            }
+            if (dbUserProfile.theme && dbUserProfile.theme !== config.theme) {
+                newConfig.theme = (dbUserProfile.theme as 'light' | 'dark');
+                hasConfigChange = true;
+            }
+            if (dbUserProfile.componentBg) {
+                newConfig.componentBg = dbUserProfile.componentBg;
+                hasConfigChange = true;
+            }
+            if (dbUserProfile.propertyText) {
+                newConfig.propertyText = dbUserProfile.propertyText;
+                hasConfigChange = true;
+            }
+            
+            // Always prioritize Server Config on Login
+            if (dbUserProfile.canvasBg) {
+                 newConfig.canvasBg = dbUserProfile.canvasBg;
+                 hasConfigChange = true;
+            }
+
+            if (hasConfigChange) {
+                setConfig(newConfig);
+                localStorage.setItem('app_config', JSON.stringify(newConfig));
+            }
+
+        } else if (dbUserProfile) {
+             // Fallback: Even if timestamp check failed or local was "newer" (but potentially default),
+             // we should trust the Server for Preferences if they exist.
+             const newConfig = { ...config };
+             let hasChange = false;
+             
+             if (dbUserProfile.componentBg) { newConfig.componentBg = dbUserProfile.componentBg; hasChange = true; }
+             if (dbUserProfile.propertyText) { newConfig.propertyText = dbUserProfile.propertyText; hasChange = true; }
+             if (dbUserProfile.canvasBg) { newConfig.canvasBg = dbUserProfile.canvasBg; hasChange = true; }
+             if (dbUserProfile.theme) { newConfig.theme = dbUserProfile.theme as 'light'|'dark'; hasChange = true; }
+
+             if (hasChange) {
+                 setConfig(newConfig);
+                 localStorage.setItem('app_config', JSON.stringify(newConfig));
+             }
+             
+             // Also populate UserProfile state
+              setUserProfile(prev => ({
+                 ...prev,
+                 componentBg: dbUserProfile.componentBg || prev.componentBg,
+                 propertyText: dbUserProfile.propertyText || prev.propertyText,
+                 canvasBg: dbUserProfile.canvasBg || prev.canvasBg,
+                 // Ensure we restore Color and Name explicitly if missing or default
+                 color: dbUserProfile.color || prev.color || '#6366F1',
+                 name: dbUserProfile.name || prev.name || 'User',
+                 theme: (dbUserProfile.theme as 'light'|'dark') || prev.theme,
+             }));
+             
+             // Local is newer logic...
              if (localTime > serverTime) {
+                 // ... keep existing push logic
                  authApi.updateProfile({ 
                         name: userProfile.name, 
                         color: userProfile.color, 
@@ -500,6 +642,16 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  finalColor = dbUserProfile.color;
              }
 
+
+             // FORCE UPDATE: If dbUserProfile has a color, we should probably prefer it over local state 
+             // in this fallback block, because we just determined local state might be stale/default.
+             if (dbUserProfile?.name) {
+                 finalName = dbUserProfile.name;
+             }
+             if (dbUserProfile?.color) {
+                 finalColor = dbUserProfile.color;
+             }
+
              if (finalName !== userProfile.name || finalColor !== userProfile.color) {
                  const updated = { 
                     ...userProfile, 
@@ -510,7 +662,24 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              }
              localStorage.setItem('my_user_name', finalName);
              localStorage.setItem('my_user_color', finalColor);
+        } else {
+            // Local is newer -> Push to Server
+             if (localTime > serverTime) {
+                 authApi.updateProfile({ 
+                        name: userProfile.name, 
+                        color: userProfile.color, 
+                        profileUpdatedAt: localTime 
+                    })
+                 .catch(e => console.warn("Auto-sync profile failed", e));
+             } else {
+                 // Check local storage fallback if provided arguments are empty
+                 const localN = localStorage.getItem('my_user_name');
+                 const localC = localStorage.getItem('my_user_color');
+                 if(localN && userProfile.name !== localN) setUserProfile(p=>({...p, name: localN}));
+                 if(localC && userProfile.color !== localC) setUserProfile(p=>({...p, color: localC}));
+             }
         }
+        
         if (dbUserProfile && dbUserProfile._id) {
             localStorage.setItem('my_user_id', dbUserProfile._id);
         }
@@ -688,11 +857,33 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                     setComments(mappedComments);
                     
                     if (data.project) {
-                        const projConf = data.project.config || {};
-                        setConfig(prev => ({ 
-                            ...prev, 
-                            ...projConf, 
-                        }));
+                        const projConf: ProjectConfig = (data.project.config as ProjectConfig) || {};
+                        // Merge Strategy:
+                        // 1. Keep current User Preferences (lang, theme, etc) from `prev` (which is sync'd from User Profile)
+                        // 2. Adopt Project-specific Settings (canvasBg) from Project Config if present.
+                        // 3. Fallback to User Preference if Project has no canvasBg.
+                        
+                        setConfig(prev => {
+                            const newC = { ...prev };
+                            
+                            // Check Canvas Background Priority
+                            if (projConf.canvasBg) {
+                                newC.canvasBg = projConf.canvasBg;
+                            } else {
+                                // Fallback to User Preference if available
+                                if (userProfile.canvasBg) {
+                                    newC.canvasBg = userProfile.canvasBg;
+                                }
+                            }
+                            
+                            // Restore User Preferences for other values
+                            if (userProfile.language) newC.language = userProfile.language as string;
+                            if (userProfile.theme) newC.theme = (userProfile.theme as 'light' | 'dark');
+                            if (userProfile.componentBg) newC.componentBg = userProfile.componentBg;
+                            if (userProfile.propertyText) newC.propertyText = userProfile.propertyText;
+                            
+                            return newC;
+                        });
                     }
 
                     // Sync to local DB for offline access
@@ -1201,13 +1392,40 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const updateConfig = (newConfig: AppSettings) => {
+    const updateConfig = (newConfig: Partial<UserProfile>) => {
+        // Save local state immediately
         setConfig(newConfig);
         localStorage.setItem('app_config', JSON.stringify(newConfig));
         
-        // Sync with backend if in a room
+        // Sync User Preferences (Language, Theme, UI Colors) to User Profile State & DB
+        updateUserProfile({
+             language: newConfig.language,
+             theme: newConfig.theme,
+             componentBg: newConfig.componentBg,
+             propertyText: newConfig.propertyText,
+             canvasBg: newConfig.canvasBg
+        });
+
+        if (isAuthenticated) {
+             authApi.updateProfile({ 
+                 language: newConfig.language,
+                 theme: newConfig.theme,
+                 componentBg: newConfig.componentBg,
+                 propertyText: newConfig.propertyText,
+                 canvasBg: newConfig.canvasBg
+             }).catch(e => console.error("User Prefs Sync Failed", e));
+        }
+        
+        // Sync Project Config (Mainly CanvasBG if changed here?)
+        // If we are in a room, valid Graph Settings should go to the project.
         if (currentRoomId && isLiveMode) {
-             graphApi.updateConfig(currentRoomId, newConfig)
+             // Strictly Filter Project Config: Only canvasBg survives in Project DB
+             // We do NOT send language/theme to the Project DB anymore.
+             const projectConfigPayload: ProjectConfig = {
+                canvasBg: newConfig.canvasBg 
+             };
+             
+             graphApi.updateConfig(currentRoomId, projectConfigPayload)
                 .catch(e => console.error("Config Sync Failed", e));
         }
     };
@@ -1215,23 +1433,30 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     const updateProjectBackground = async (color: string) => {
         // Optimistic Update
         setConfig(prev => ({ 
-            ...prev, 
-            defaultColors: { ...prev.defaultColors, canvasBg: color } 
+            ...prev,
+            canvasBg: color 
         }));
+        // Update User Profile state as well
+        updateUserProfile({ canvasBg: color });
         
         if (currentRoomId && isLiveMode) {
             try {
+                // This backend endpoint now updates BOTH Project and User canvasBg
                 await graphApi.updateBackground(currentRoomId, color);
             } catch(e) {
                 console.error("Backgound Sync Failed", e);
             }
+        } else if (isAuthenticated) {
+            // If local/no-room but logged in, save to User Profile directly
+            authApi.updateProfile({ canvasBg: color })
+                .catch(e => console.error("User CanvasBg Sync Failed", e));
         }
         
         // Also save to local storage as fallback/default for local
         if (!currentRoomId) {
              const newConf = { 
                  ...config, 
-                 defaultColors: { ...config.defaultColors, canvasBg: color } 
+                 canvasBg: color
              };
              localStorage.setItem('app_config', JSON.stringify(newConf));
         }

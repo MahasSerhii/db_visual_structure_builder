@@ -14,6 +14,12 @@ export interface IUser extends Document {
   rememberMe?: boolean; // User preference
   createdAt: Date;
   lastActive: Date;
+  // Preferences
+  language?: string;
+  theme?: 'light' | 'dark';
+  componentBg?: string;
+  propertyText?: string;
+  canvasBg?: string;
 }
 
 const UserSchema: Schema = new Schema({
@@ -28,6 +34,12 @@ const UserSchema: Schema = new Schema({
   createdAt: { type: Date, default: Date.now },
   lastActive: { type: Date, default: Date.now },
    avatar: { type: String },
+   // Preferences
+   language: { type: String, default: 'en' },
+   theme: { type: String, enum: ['light', 'dark'], default: 'light' },
+   componentBg: { type: String, default: '#6366F1' },
+   propertyText: { type: String, default: '#000000' },
+   canvasBg: { type: String }
 }, { timestamps: true });
 
 export default mongoose.model<IUser>('User', UserSchema);

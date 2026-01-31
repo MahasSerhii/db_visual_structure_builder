@@ -14,7 +14,7 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
     // Form State
     const [title, setTitle] = useState('');
     const [desc, setDesc] = useState('');
-    const [color, setColor] = useState(config.defaultColors.componentBg || '#6366F1');
+    const [color, setColor] = useState(config.componentBg || '#6366F1');
     const [props, setProps] = useState<{name: string, type: string, color: string}[]>([]);
     
     // JSON Import State
@@ -116,11 +116,11 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
         setTitle('');
         setDesc('');
         setProps([]);
-        setColor(config.defaultColors.componentBg || '#6366F1');
+        setColor(config.componentBg || '#6366F1');
     };
 
     const addProp = () => {
-        setProps([...props, { name: '', type: 'string', color: config.defaultColors.propertyText || '#000000' }]);
+        setProps([...props, { name: '', type: 'string', color: config.propertyText || '#000000' }]);
     };
 
     const removeProp = (index: number) => {

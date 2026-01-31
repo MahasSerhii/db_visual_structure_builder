@@ -1011,7 +1011,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
             </div>
 
             <div className="relative w-full h-full">
-                <svg ref={svgRef} className="w-full h-full" style={{ backgroundColor: config.defaultColors?.canvasBg || '#f8fafc' }}>
+                <svg ref={svgRef} className="w-full h-full" style={{ backgroundColor: config.canvasBg || '#f8fafc' }}>
                     <defs></defs>
                     <g ref={gRef} />
                 </svg>
@@ -1023,7 +1023,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
                         <input
                             type="color"
                             className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                            value={config.defaultColors?.canvasBg || '#f8fafc'}
+                            value={config.canvasBg || '#f8fafc'}
                             onChange={(e) => updateProjectBackground?.(e.target.value)}
                         />
                     </div>

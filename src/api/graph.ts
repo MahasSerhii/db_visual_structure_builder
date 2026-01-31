@@ -7,14 +7,14 @@ import {
     VerifyAccessRequest, 
     VerifyAccessResponse 
 } from './apiTypes';
-import { NodeData, EdgeData, Comment, AppSettings, RoomAccessUser } from '../utils/types';
+import { NodeData, EdgeData, Comment, RoomAccessUser, ProjectConfig } from '../utils/types';
 
 export const graphApi = {
     getGraph: (roomId: string) => {
         return apiClient.get<GraphDataResponse>(`/graph/${roomId}`);
     },
 
-    initGraph: (data: { roomId: string, name?: string, isPublic?: boolean, config?: AppSettings }) => {
+    initGraph: (data: { roomId: string, name?: string, isPublic?: boolean, config?: ProjectConfig }) => {
         return apiClient.post<ApiResponse>('/graph/init', data);
     },
 
@@ -88,7 +88,7 @@ export const graphApi = {
         return apiClient.delete<ApiResponse>(`/graph/${roomId}/comment/${commentId}`);
     },
 
-    updateConfig: (roomId: string, config: AppSettings) => {
+    updateConfig: (roomId: string, config: ProjectConfig) => {
         return apiClient.put<ApiResponse>(`/graph/${roomId}/config`, { config });
     },
 
