@@ -32,7 +32,9 @@ export const DataTab: React.FC = () => {
         config, nodes, edges, comments, refreshData, isLiveMode, setLiveMode, setGraphData, 
         currentRoomId, setCurrentRoomId, isReadOnly, setReadOnly, t, isAuthenticated, login, logout, 
         activeUsers, connectionStatus, setTransitioningToLive, updateConfig, updateProjectBackground,
-        isUserVisible, toggleUserVisibility, userProfile, userId: currentUserId, mySocketId
+        isUserVisible, toggleUserVisibility, userProfile, userId: currentUserId, mySocketId,
+        sessionConflict, resolveSessionConflict,
+        sessionKicked, acknowledgeSessionKicked
     } = useGraph();
     const { showToast } = useToast();
     // Initialize Local RoomID from Context if we are in Live Mode
@@ -103,8 +105,17 @@ export const DataTab: React.FC = () => {
         if (connectionStatus === 'failed' || connectionStatus === 'connected') {
              setIsConnecting(false);
              setTransitioningToLive(false);
+             
+             // Ensure we stop the restoring loader if we have a definitive status
+             setIsRestoringSession(false);
+
+             // FIX: If global context confirms connection, force local UI state to match
+             // This fixes issues where conflict resolution re-connects in backgound but UI stays on input screen
+             if (connectionStatus === 'connected' && currentRoomId && isLiveMode) {
+                 setIsConnected(true);
+             }
         }
-    }, [connectionStatus, setTransitioningToLive]);
+    }, [connectionStatus, setTransitioningToLive, currentRoomId, isLiveMode]);
 
 
     // Handle Link Auto-Connect & Token Ops
@@ -376,6 +387,12 @@ export const DataTab: React.FC = () => {
 
     // handleInitFirebase removed
 
+    // Ensure LoginUI triggers hide when authenticated
+    useEffect(() => {
+        if (isAuthenticated) {
+            setShowLoginUI(false);
+        }
+    }, [isAuthenticated]);
 
     const handleConnect = async (forceLiveMode: boolean = true, tokenOverride?: string, roomIdOverride?: string) => {
         const targetConnectRoomId = roomIdOverride || roomId;
@@ -446,11 +463,18 @@ export const DataTab: React.FC = () => {
         } catch { /* ignore */ }
         
         if (authEmail) {
-            userId = authEmail;
-            // Sync Auth ID to storage to ensure UI matching
-            if(userId){
-            localStorage.setItem('my_user_id', userId);
-            if (isClientMode) sessionStorage.setItem('client_uid', userId)}
+            // userId = authEmail; // Stop overwriting ID with Email
+            // Only use email as fallback if ID is missing from storage/token
+            // But usually ID is better.
+            if (!userId) {
+                 userId = authEmail;
+            }
+            // Sync Auth ID to storage to ensure UI matching - Only if we don't have one?
+            // If we have a MongoID in storage, KEEP IT.
+            if(userId && !localStorage.getItem('my_user_id')){
+                 localStorage.setItem('my_user_id', userId);
+            }
+            if (isClientMode) sessionStorage.setItem('client_uid', userId || authEmail)
         } else if (!userId) {
             userId = (isClientMode ? 'guest_' : 'user_') + Math.random().toString(36).substr(2, 9);
             if (isClientMode) sessionStorage.setItem('client_uid', userId);
@@ -1256,6 +1280,41 @@ export const DataTab: React.FC = () => {
                 confirmText={t('disconnect.confirm')}
                 cancelText={t('disconnect.cancel')}
                 isDanger={true}
+            />
+
+            <ConfirmationModal
+                isOpen={sessionConflict}
+                onClose={() => {
+                    resolveSessionConflict(false);
+                    handleDisconnect();
+                }}
+                onConfirm={() => resolveSessionConflict(true)}
+                title="Concurrent Session Detected"
+                message="Only one active connection is allowed per user for this room. 
+If you continue, the session in your other tab will be disconnected.
+
+Do you want to force this connection?"
+                confirmText="Connect Here (Disconnect Other)"
+                cancelText="Cancel"
+                isDanger={false}
+            />
+
+            <ConfirmationModal
+                isOpen={sessionKicked}
+                onClose={() => {
+                    acknowledgeSessionKicked();
+                    handleDisconnect();
+                }}
+                onConfirm={() => {
+                   acknowledgeSessionKicked();
+                   handleDisconnect();
+                }}
+                title="Disconnected"
+                message="Another connection for this user was detected in a different tab/browser. 
+You have been disconnected from this session."
+                confirmText="Proceed"
+                cancelText=""
+                isDanger={false}
             />
         </div>
     );

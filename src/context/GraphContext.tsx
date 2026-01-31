@@ -61,6 +61,10 @@ interface GraphContextType {
     login: (token: string, email: string, name?: string, provider?: 'email' | 'google' | 'apple', projects?: SavedProject[], userProfile?: Partial<AuthUser>) => void;
     logout: () => Promise<void>;
     clearHistory: () => Promise<void>;
+    sessionConflict: boolean;
+    resolveSessionConflict: (force: boolean) => void;
+    sessionKicked: boolean;
+    acknowledgeSessionKicked: () => void;
 }
 
 export interface GraphSnapshot {
@@ -219,6 +223,15 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
         };
     }, []);
 
+    const [sessionConflict, setSessionConflict] = useState(false);
+    const [sessionKicked, setSessionKicked] = useState(false);
+
+
+
+    const acknowledgeSessionKicked = useCallback(() => {
+        setSessionKicked(false);
+    }, []);
+
     useEffect(() => {
         if (!socketRef.current) return;
         const socket = socketRef.current;
@@ -230,13 +243,17 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  const sessionUserName = userProfile.name || localStorage.getItem('my_user_name') || 'Anonymous';
                  const sessionUserId = localStorage.getItem('my_user_id'); // Stabilize identity
                  
+                 // Reset conflict state on new attempt
+                 setSessionConflict(false);
+
                  socket.emit('join-room', {
                      roomId: currentRoomId,
                      userId: sessionUserId, // Use stable ID for deduplication
                      userName: sessionUserName,
                      userColor: userProfile.color,
                      userEmail: (authProvider === 'email' ? 'hidden' : undefined),
-                     isVisible: isUserVisible
+                     isVisible: isUserVisible,
+                     force: false
                  });
              }
         };
@@ -325,6 +342,19 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              socket.on('comment:delete', handleCommentDelete);
              socket.on('history:add', handleHistoryAdd);
              socket.on('history:clear', handleHistoryClear);
+             socket.on('session:duplicate', (data: { message: string }) => {
+                 console.warn("Duplicate session detected. Disconnecting.");
+                 setLiveMode(false);
+                 setCurrentRoomId(null);
+                 setConnectionStatus('failed');
+                 setIsLoading(false);
+                 
+                 // Clear session to prevent auto-reconnect
+                 sessionStorage.removeItem('room_id_session');
+                 
+                 // Show Modal via state instead of Alert
+                 setSessionKicked(true);
+             });
              socket.on('room:cleared', () => {
                  setNodes([]);
                  setEdges([]);
@@ -364,6 +394,13 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                       // Do NOT reload. Just behave as disconnected.
                  }
              });
+             
+             socket.on('session:conflict', () => {
+                 console.warn("Session Conflict Detected");
+                 // We don't change mode yet, just trigger the modal
+                 setSessionConflict(true);
+                 setIsLoading(false); // Stop loading spinner
+             });
 
              socket.on('project:settings', (data: { config?: AppSettings; backgroundColor?: string }) => {
                  setConfig(prev => {
@@ -396,6 +433,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
                  socket.off('node:update', handleNodeUpdate);
                  socket.off('node:delete', handleNodeDelete);
                  socket.off('project:settings');
+                 socket.off('session:duplicate');
                  socket.off('edge:update', handleEdgeUpdate);
                  socket.off('edge:delete', handleEdgeDelete);
                  socket.off('comment:update', handleCommentUpdate);
@@ -625,6 +663,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     const refreshData = useCallback(async (shouldForce = false) => {
         if (connectionStatusRef.current === 'failed' && !shouldForce) return;
 
+        console.log(`[GraphContext] refreshData (Force: ${shouldForce}) - Room: ${currentRoomId}, Auth: ${isAuthenticated}, Live: ${isLiveMode}`);
+
         // CRITICAL FIX: Only fetch from Backend if we are strictly in Live Mode.
         // If we are in Local Mode (even with a RoomID set), we must use LocalDB.
         if (currentRoomId && isAuthenticated && isLiveMode) {
@@ -636,6 +676,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
 
            while (attempts < maxAttempts) {
                try {
+                    console.log(`[GraphContext] Fetching Graph... Attempt ${attempts + 1}`);
                     const data = await graphApi.getGraph(currentRoomId);
                     // Transform backend nodeId -> id (already handled by backend mapping usually, but sticking to NodeData type)
                     const mappedNodes = data.nodes;
@@ -750,6 +791,47 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              }
         }
     }, [currentRoomId, isAuthenticated, isLiveMode, logout, setCurrentRoomId, setLiveMode]); // Removed connectionStatus from deps to avoid loop
+    
+    // We need to trigger the force logic
+    const resolveSessionConflict = useCallback((force: boolean) => {
+         if (!socketRef.current || !currentRoomId) return;
+         if (force) {
+             const sessionUserName = userProfile.name || localStorage.getItem('my_user_name') || 'Anonymous';
+             const sessionUserId = localStorage.getItem('my_user_id'); 
+             
+             // Emit force join
+             socketRef.current.emit('join-room', {
+                 roomId: currentRoomId,
+                 userId: sessionUserId,
+                 userName: sessionUserName,
+                 userColor: userProfile.color,
+                 userEmail: (authProvider === 'email' ? 'hidden' : undefined),
+                 isVisible: isUserVisible,
+                 force: true
+             });
+             setSessionConflict(false);
+             
+             // FORCE UI REFRESH
+             // Since handleConnect probably finished but failed locally due to conflict interuption or state drift
+             // We need to re-affirm that we are Live and Connected.
+             
+             // 1. Force the state variable
+             setLiveMode(true);
+             localStorage.setItem('is_live_mode', 'true');
+             
+             // 2. Force status to avoid "failed" blocking
+             setConnectionStatus('connecting');
+
+             // 3. Trigger Refresh
+             setTimeout(() => {
+                 refreshData(true);
+             }, 100);
+             
+         } else {
+             // Cancel logic - handled by DataTab usually calling disconnect, but state reset here helps
+             setSessionConflict(false);
+         }
+    }, [currentRoomId, userProfile, authProvider, isUserVisible, refreshData, setConnectionStatus, setLiveMode]);
 
     const retryConnection = async () => {
         await refreshData(true);
@@ -766,7 +848,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         // Always refresh data when switching modes to align with the new mode's source
         // If Live: refreshData() uses API. If Local: refreshData() uses LocalDB.
-        refreshData();
+        console.log("[GraphContext] Mode toggled. Refreshing data (Forced).");
+        refreshData(true);
     }, [isLiveMode, refreshData]);
     
     const syncNodeChange = (node: NodeData) => {
@@ -1173,7 +1256,9 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
             t, isAuthenticated, authProvider, savedProjects, activeUsers, login, logout,
             isTransitioningToLive, setTransitioningToLive, clearHistory,
             isUserVisible, toggleUserVisibility,
-            userProfile, updateUserProfile, userId, mySocketId
+            userProfile, updateUserProfile, userId, mySocketId,
+            sessionConflict, resolveSessionConflict,
+            sessionKicked, acknowledgeSessionKicked
         }}>
             {children}
         </GraphContext.Provider>

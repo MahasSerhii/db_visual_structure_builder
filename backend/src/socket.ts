@@ -121,16 +121,42 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
 
                         if (user) {
                             resolvedUserId = user._id as mongoose.Types.ObjectId;
+                        } else {
+                            console.warn(`[Socket] User lookup by email '${emailToSearch}' failed - No user found.`);
                         }
                      } catch(e) { console.error("User lookup failed", e); }
                  }
             }
+            
+            console.log(`[Socket] Join Room: ${roomId}, Socket: ${socket.id}, InputID: ${userId}, ResolvedID: ${resolvedUserId}`);
 
             // Save Session
             try {
                 // Eliminate duplicates by userId if present (optional logic)
                 if (resolvedUserId) {
-                     await Session.deleteMany({ roomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
+                     // Check for existing sessions
+                     const oldSessions = await Session.find({ roomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
+                     
+                     if (oldSessions.length > 0) {
+                        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                        // @ts-ignore
+                        if (!data.force) {
+                            console.log(`[Socket] Conflict detected for user ${resolvedUserId}. Emitting session:conflict.`);
+                            socket.emit('session:conflict', { message: "Only one connection for one user available in this room." });
+                            socket.leave(roomId); // Ensure it's not subscribed
+                            return;
+                        }
+
+                        // Force Connect: Kick others
+                        console.log(`[Socket] Found ${oldSessions.length} duplicate sessions for user ${resolvedUserId}. Kicking...`);
+                        for (const oldS of oldSessions) {
+                            console.log(`[Socket] Kicking session ${oldS.socketId}`);
+                            io.to(oldS.socketId).emit('session:duplicate', {
+                                message: "You have been disconnected because this room was opened in another tab."
+                            });
+                        }
+                        await Session.deleteMany({ roomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
+                     }
                 }
 
                 await Session.findOneAndUpdate(
