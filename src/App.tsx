@@ -394,13 +394,17 @@ const MainLayout: React.FC = () => {
     );
 };
 
+import { BrowserRouter } from 'react-router-dom';
+
 function App() {
   return (
-    <ToastProvider>
-        <GraphProvider>
-            <MainLayout />
-        </GraphProvider>
-    </ToastProvider>
+    <BrowserRouter>
+        <ToastProvider>
+            <GraphProvider>
+                <MainLayout />
+            </GraphProvider>
+        </ToastProvider>
+    </BrowserRouter>
   );
 }
 
