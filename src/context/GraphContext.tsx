@@ -7,10 +7,12 @@ import { getTranslation } from '../utils/translations';
 import { authApi } from '../api/auth';
 import { graphApi } from '../api/graph';
 import { io, Socket } from 'socket.io-client';
+import { useWorkspace } from './WorkspaceContext'; // Integration with Workspace Tabs
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'failed'; 
 
 interface GraphContextType {
+    tabId?: string; // Identity of the tab
     nodes: NodeData[];
     edges: EdgeData[];
     comments: Comment[];
@@ -88,7 +90,7 @@ export interface HistoryItem {
 
 const GraphContext = createContext<GraphContextType | undefined>(undefined);
 
-export const GraphProvider = ({ children }: { children: ReactNode }) => {
+export const GraphProvider = ({ children, initialRoomId, tabId }: { children: ReactNode; initialRoomId?: string; tabId?: string }) => {
     const [nodes, setNodes] = useState<NodeData[]>([]);
     const [edges, setEdges] = useState<EdgeData[]>([]);
     const [comments, setComments] = useState<Comment[]>([]);
@@ -98,24 +100,78 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
     const connectionStatusRef = useRef(connectionStatus);
     useEffect(() => { connectionStatusRef.current = connectionStatus; }, [connectionStatus]);
     
-    // Persistence: Initialize from LocalStorage
+    // Persistence: Initialize from LocalStorage or Prop
     const [currentRoomId, _setCurrentRoomId] = useState<string | null>(() => {
+        // If this is a specific tab initialization (multi-tab mode), prioritize its prop
+        if (initialRoomId !== undefined) { 
+             return initialRoomId; 
+        }
+        // ONLY fallback to local storage if NO explicit initialRoomId (not even null) was passed.
+        // In the workspace layout, we pass null explicitly for new tabs.
+        // However, standard React behavior treats undefined as "absent".
+        // The WorkspaceLayout passes "tab.roomId || undefined". 
+        // If tab.roomId is null, it passes undefined, so this falls back to localStorage.
+        // We need to FIX WorkspaceLayout to pass null instead of undefined if we want to avoid fallback.
+        // BUT actually, let's just NOT use localStorage for room ID initialization in multi-tab mode ever.
+        // The global localStorage 'current_room_id' is conceptually flawed for multi-tab.
+        
+        // Strategy: 
+        // 1. If we are in a tabbed environment (tabId is present), we should NEVER use the global localStorage `current_room_id` for initialization.
+        //    Instead, we rely entirely on `initialRoomId`.
+        if (tabId) {
+            return initialRoomId || null;
+        }
+
+        // 2. Legacy fallback for non-tabbed usage
         return localStorage.getItem('current_room_id');
     });
+
+    // --- WORKSPACE INTEGRATION ---
+    // Safely attempt to sync with workspace tabs.
+    // In a multi-tab environment, we must keep the workspace state in sync with the internal graph state.
+    const { updateTab } = useWorkspace(); 
+
+    useEffect(() => {
+        if (tabId) {
+            updateTab(tabId, { roomId: currentRoomId });
+        }
+    }, [currentRoomId, tabId, updateTab]);
+    // -----------------------------
+
     const [isLiveMode, _setLiveMode] = useState(() => {
+        // In Multi-Tab mode, we generally do NOT want global live mode persistence 
+        // because it causes new tabs to instantly try to go live.
+        // Each tab needs to decide if it's live based on whether it has a roomId.
+        if (tabId) {
+            // If we have an initialRoomId, we assume we want to be live.
+            // If we don't (new tab), we start offline.
+            return !!initialRoomId;
+        }
+
+        // Legacy behavior for single-window apps
         return localStorage.getItem('is_live_mode') === 'true';
     });
     const [isTransitioningToLive, setTransitioningToLive] = useState(false);
 
     const setCurrentRoomId = useCallback((id: string | null) => {
         _setCurrentRoomId(id);
-        if (id) localStorage.setItem('current_room_id', id);
-        else localStorage.removeItem('current_room_id');
-    }, []);
+        
+        // Only persist to global storage if NOT in tabbed mode
+        // Or perhaps we just stop using this global key altogether to avoid confusion?
+        if (!tabId) {
+            if (id) localStorage.setItem('current_room_id', id);
+            else localStorage.removeItem('current_room_id');
+        }
+    }, [tabId]);
 
     const setLiveMode = useCallback((isLive: boolean) => {
         _setLiveMode(isLive);
-        localStorage.setItem('is_live_mode', String(isLive));
+        
+        // Only persist to global storage if NOT in tabbed mode
+        if (!tabId) {
+            localStorage.setItem('is_live_mode', String(isLive));
+        }
+
         if (!isLive) {
             setConnectionStatus('connected'); // Reset failed/connecting status when switching to local
         } else {
@@ -123,7 +179,7 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              // but we might want to set status to connecting to show loader immediately
              setConnectionStatus(prev => prev === 'failed' ? 'connecting' : prev); // Reset failed if retrying live
         }
-    }, []);
+    }, [tabId]);
 
     // New ReadOnly Access State
     const [isReadOnly, setReadOnly] = useState(false);
@@ -1003,26 +1059,21 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
              setSessionConflict(false);
              
              // FORCE UI REFRESH
-             // Since handleConnect probably finished but failed locally due to conflict interuption or state drift
-             // We need to re-affirm that we are Live and Connected.
+             setConnectionStatus('connecting'); 
              
-             // 1. Force the state variable
-             setLiveMode(true);
-             localStorage.setItem('is_live_mode', 'true');
-             
-             // 2. Force status to avoid "failed" blocking
-             setConnectionStatus('connecting');
-
-             // 3. Trigger Refresh
+             // Trigger a data refresh to ensure socket listeners are re-bound if needed
              setTimeout(() => {
                  refreshData(true);
              }, 100);
-             
+
          } else {
-             // Cancel logic - handled by DataTab usually calling disconnect, but state reset here helps
+             // User canceled - disconnect
              setSessionConflict(false);
+             setLiveMode(false);
+             setCurrentRoomId(null);
+             socketRef.current.disconnect();
          }
-    }, [currentRoomId, userProfile, authProvider, isUserVisible, refreshData, setConnectionStatus, setLiveMode]);
+    }, [currentRoomId, userProfile, authProvider, isUserVisible, setLiveMode, setCurrentRoomId, refreshData]);
 
     const retryConnection = async () => {
         await refreshData(true);
@@ -1483,7 +1534,8 @@ export const GraphProvider = ({ children }: { children: ReactNode }) => {
             isUserVisible, toggleUserVisibility,
             userProfile, updateUserProfile, userId, mySocketId,
             sessionConflict, resolveSessionConflict,
-            sessionKicked, acknowledgeSessionKicked
+            sessionKicked, acknowledgeSessionKicked,
+            tabId
         }}>
             {children}
         </GraphContext.Provider>

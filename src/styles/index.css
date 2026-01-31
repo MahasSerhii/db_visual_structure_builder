@@ -37,6 +37,14 @@
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #E5E7EB; border-radius: 4px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #D1D5DB; }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
 details > summary { list-style: none; }
 details > summary::-webkit-details-marker { display: none; }
 details[open] summary ~ * { animation: sweep .3s ease-in-out; }

@@ -22,6 +22,8 @@ import { DataActionsSection } from './DataTabParts/DataActionsSection';
 import { downloadJSON, processImportFile, wipeDatabase } from '../../../utils/dataTabUtils';
 // import { uploadFullGraphToBackend, api } from '../../../utils/api';
 import { graphApi } from '../../../api/graph';
+import { SavedProject } from '../../../utils/types';
+import { FolderOpen, ChevronDown, ChevronRight, User, Activity } from 'lucide-react';
 
 
 
@@ -34,20 +36,56 @@ export const DataTab: React.FC = () => {
         activeUsers, connectionStatus, setTransitioningToLive, updateConfig, updateProjectBackground,
         isUserVisible, toggleUserVisibility, userProfile, userId: currentUserId, mySocketId,
         sessionConflict, resolveSessionConflict,
-        sessionKicked, acknowledgeSessionKicked
+        sessionKicked, acknowledgeSessionKicked, savedProjects, tabId
     } = useGraph();
     const { showToast } = useToast();
     // Initialize Local RoomID from Context if we are in Live Mode
+    // FIXED: Do not fall back to localStorage 'last_active_room_id' to prevent new tabs from auto-connecting to old rooms
     const [roomId, setRoomId] = useState(() => {
         if (isLiveMode && currentRoomId) return currentRoomId;
-        // Check session storage first (current tab), then fall back to local storage (cross-tab persistence)
-        return sessionStorage.getItem('room_id_session') || localStorage.getItem('last_active_room_id') || '';
+        
+        // If we are in a Multi-Tab Workspace, we must NEVER read shared sessionStorage defaults
+        // unless we are reloading exactly this session. 
+        // But since we can't easily distinguish a reload from a new tab using just sessionStorage keys 
+        // (because keys are shared across tabs in the same window context), 
+        // we must rely ONLY on what GraphContext tells us (which comes from Workspace persistence).
+        if (tabId) {
+             // GraphContext already handled persistence via Props.
+             // If GraphContext says we have a room, we use it. If not, we are empty.
+             return currentRoomId || '';
+        }
+
+        // Check session storage first (current tab)
+        return sessionStorage.getItem('room_id_session') || '';
     });
 
     // Always start disconnected on mount to ensure fresh socket connection on reload
     // BUT if we have a session room, start as 'Restoring' to hide the input
-    const [isRestoringSession, setIsRestoringSession] = useState(() => !!(sessionStorage.getItem('room_id_session') || localStorage.getItem('last_active_room_id')));
+    const [isRestoringSession, setIsRestoringSession] = useState(() => {
+        // Same logic: In Tab Mode, ignore shared session storage
+        if (tabId) {
+             return !!currentRoomId; 
+        }
+        return !!(sessionStorage.getItem('room_id_session'));
+    });
     const [isConnected, setIsConnected] = useState(false);
+
+    // Shared Projects Accordion
+    const [isProjectsOpen, setIsProjectsOpen] = useState(true);
+
+    const uniqueSavedProjects = React.useMemo(() => {
+        const unique = new Map();
+        savedProjects.forEach(p => unique.set(p.id, p));
+        return Array.from(unique.values());
+    }, [savedProjects]);
+
+    const handleOpenProject = (project: SavedProject) => {
+        // Optimistic switch
+        setCurrentRoomId(project.id);
+        // Socket in GraphContext deals with connection
+    };
+    
+    const isProjectActive = (id: string) => id === currentRoomId;
     
     const [isCSVModalOpen, setCSVModalOpen] = useState(false);
     const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
@@ -113,6 +151,9 @@ export const DataTab: React.FC = () => {
              // This fixes issues where conflict resolution re-connects in backgound but UI stays on input screen
              if (connectionStatus === 'connected' && currentRoomId && isLiveMode) {
                  setIsConnected(true);
+                 // Persistence Fix for Conflict Recovery:
+                 // Ensure we re-save the session when connection is restored externally (e.g. via Conflict Modal)
+                 sessionStorage.setItem('room_id_session', currentRoomId);
              }
         }
     }, [connectionStatus, setTransitioningToLive, currentRoomId, isLiveMode]);
@@ -196,8 +237,11 @@ export const DataTab: React.FC = () => {
             // Clean URL? Maybe later to hide token
         }
 
-        // 2. Client Initialization
-        if (roomParam && !isConnected) {
+        // 2. Client Initialization (Guest via URL)
+        // Only run if we are NOT in a specific tab context (or if this is the first init)
+        // But since WorkspaceContext now handles URL parsing for the initial tab,
+        // we can probably ignore this if `tabId` is set, to avoid "Zombie Tabs" picking up the URL later.
+        if (!tabId && roomParam && !isConnected) {
             let targetRoomId = roomParam;
 
             // Decode Room
@@ -220,17 +264,16 @@ export const DataTab: React.FC = () => {
         const timer = setTimeout(() => {
             if(roomId && !isConnected && !isConnecting) {
                  const storedSessionRoom = sessionStorage.getItem('room_id_session');
-                 const storedLocalRoom = localStorage.getItem('last_active_room_id');
+                 // For multi-tab, avoid reading global `last_active_room_id` for auto-connect logic
+                 // This prevents opening a new tab and having it auto-jump to the old room just because it's in localStorage
                  
-                 // Persist to session storage if found in local storage (cross-tab sync)
-                 if (!storedSessionRoom && storedLocalRoom && storedLocalRoom === roomId) {
-                     sessionStorage.setItem('room_id_session', roomId);
-                 }
-
                  // Check if valid to auto-connect
+                 // Only auto-connect if we have a specific session record (this specific tab was refreshed)
+                 // OR if we are explicitly in "Guest Mode" (URL params)
+                 // OR if we are in Tab Mode and have a room ID (Persistence restore)
                  const shouldAutoConnect = isClientMode || (
-                     (storedSessionRoom && storedSessionRoom === roomId) ||
-                     (storedLocalRoom && storedLocalRoom === roomId)
+                     (!tabId && storedSessionRoom && storedSessionRoom === roomId) || // Standard Single-Tab restore
+                     (tabId && roomId) // Multi-Tab restore (roomId comes from GraphContext/Props)
                  );
 
                  if (shouldAutoConnect) {
@@ -1092,6 +1135,50 @@ export const DataTab: React.FC = () => {
     return (
         <div className="space-y-6">
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">{t('data.collab')}</h3>
+
+            {/* SAVED PROJECTS SECTION (Moved from Connect Tab) */}
+            {uniqueSavedProjects.length > 0 && (
+                <div className="border border-indigo-100 dark:border-indigo-900 rounded-xl overflow-hidden mb-4">
+                    <button 
+                        onClick={() => setIsProjectsOpen(!isProjectsOpen)}
+                        className="w-full flex items-center justify-between p-3 bg-indigo-50/50 dark:bg-slate-800 hover:bg-indigo-50 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                             <FolderOpen size={16} className="text-indigo-600 dark:text-indigo-400" />
+                             <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{t('connect.shared')}</span>
+                             <span className="bg-indigo-200 text-indigo-800 text-[9px] font-bold px-1.5 rounded-full">{uniqueSavedProjects.length}</span>
+                        </div>
+                        {isProjectsOpen ? <ChevronDown size={14} className="text-gray-400"/> : <ChevronRight size={14} className="text-gray-400"/>}
+                    </button>
+                    
+                    {isProjectsOpen && (
+                        <div className="bg-white dark:bg-slate-900 border-t border-indigo-50 dark:border-slate-800 max-h-[300px] overflow-y-auto custom-scrollbar">
+                            {uniqueSavedProjects.map((p) => (
+                                <div key={p.id} className={`p-3 border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between group ${isProjectActive(p.id) ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
+                                     <div className="min-w-0">
+                                        <div className="text-xs font-bold text-gray-700 dark:text-gray-300 truncate" title={p.name}>{p.name}</div>
+                                        <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                                            <User size={10}/> {p.author}
+                                        </div>
+                                     </div>
+                                     {isProjectActive(p.id) ? (
+                                         <span className="flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                                             <Activity size={10} /> Active
+                                         </span>
+                                     ) : (
+                                         <button 
+                                            onClick={() => handleOpenProject(p)}
+                                            className="text-[10px] font-bold text-indigo-600 border border-indigo-200 px-2 py-1 rounded-md hover:bg-indigo-600 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                                         >
+                                             Open
+                                         </button>
+                                     )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
             
             <div className="p-4 bg-white rounded-lg border border-indigo-200 shadow-sm space-y-3 dark:bg-indigo-900/10 dark:border-indigo-800">
                  <div className="text-xs font-bold text-gray-700 flex justify-between items-center dark:text-indigo-200">
