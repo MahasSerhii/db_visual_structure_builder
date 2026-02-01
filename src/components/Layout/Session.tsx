@@ -36,7 +36,7 @@ export const ProjectSession: React.FC<{ tabId?: string }> = ({ tabId }) => {
              // Find project name if possible
              const project = savedProjects.find(p => p.id === currentRoomId);
              
-             let title = `Room ${currentRoomId.slice(0,6)}`;
+             let title = currentRoomId; 
              if (project) {
                  // Remove "Project" prefix if present (case insensitive)
                  title = project.name.replace(/^Project\s+/i, '');

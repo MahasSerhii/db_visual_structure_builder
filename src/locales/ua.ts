@@ -314,7 +314,7 @@ export const ua: Record<string, string> = {
     "history.clearFailed": "Не вдалося очистити історію",
     "info": "Інфо",
     "role.editor": "(Редактор)",
-    "role.host": "(Хост)",
+    "role.host": "(Адмін)",
     "role.viewer": "(Глядач)",
     "todo.addMain": "Додати нову головну ціль...",
     "todo.addSub": "Додати підзадачу...",

@@ -1,13 +1,13 @@
 import React, { useState, useMemo  } from 'react';
-import { NodeData, EdgeData, AppSettings, Comment } from '../../utils/types';
+import { NodeData, EdgeData, ProjectConfig, Comment } from '../../utils/types';
 import { ChevronRight, ArrowLeftRight, Trash2, Edit2, ChevronDown, Check, ArrowRight, ArrowLeft } from 'lucide-react';
 import { useGraph } from '../../context/GraphContext';
 
 interface SyncConflictModalProps {
     isOpen: boolean;
     onClose: () => void;
-    localData: { nodes: NodeData[], edges: EdgeData[], comments: Comment[], config?: AppSettings };
-    remoteData: { nodes: NodeData[], edges: EdgeData[], comments: Comment[], config?: AppSettings };
+    localData: { nodes: NodeData[], edges: EdgeData[], comments: Comment[], config?: ProjectConfig };
+    remoteData: { nodes: NodeData[], edges: EdgeData[], comments: Comment[], config?: ProjectConfig };
     onResolve: (action: 'push_local' | 'pull_remote' | 'merge', mergedData?: { nodes: NodeData[], edges: EdgeData[], comments: Comment[] }) => void;
 }
 

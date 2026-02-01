@@ -314,7 +314,7 @@ export const fr: Record<string, string> = {
     "history.clearFailed": "Échec de l'effacement de l'historique",
     "info": "Info",
     "role.editor": "(Éditeur)",
-    "role.host": "(Hôte)",
+    "role.host": "(Admin)",
     "role.viewer": "(Spectateur)",
     "todo.addMain": "Ajouter un nouvel objectif principal...",
     "todo.addSub": "Ajouter une sous-tâche...",

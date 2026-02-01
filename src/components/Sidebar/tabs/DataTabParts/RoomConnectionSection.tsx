@@ -57,7 +57,8 @@ export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
     }
 
     // STATE 1: Not Authenticated
-    if (!isAuthenticated && !isConnected) {
+    // If we are logged out, we should NOT see the input form.
+    if (!isAuthenticated) {
         return (
             <div className="w-full bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-5 text-center shadow-sm">
                 <div className="bg-indigo-50 dark:bg-indigo-900/30 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">

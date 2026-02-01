@@ -314,7 +314,7 @@ export const cz: Record<string, string> = {
     "history.clearFailed": "Nepodařilo se vymazat historii",
     "info": "Info",
     "role.editor": "(Editor)",
-    "role.host": "(Hostitel)",
+    "role.host": "(Admin)",
     "role.viewer": "(Divák)",
     "todo.addMain": "Přidat nový hlavní cíl...",
     "todo.addSub": "Přidat podúkol...",

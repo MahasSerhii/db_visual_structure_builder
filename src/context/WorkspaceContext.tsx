@@ -6,6 +6,7 @@ export interface TabData {
     title: string;
     type: 'graph';
     isLive?: boolean; 
+    hasAlert?: boolean; // <--- Notification state
 }
 
 interface WorkspaceContextType {

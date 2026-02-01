@@ -309,18 +309,21 @@ router.post('/social-login', async (req: Request, res: Response) => {
         
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        const ownedProjects = await Project.find({ ownerId: user._id });
+        const ownedProjects = await Project.find({ ownerId: user._id, isDeleted: false });
         
         // Find projects where user has access
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        const accessRecords = await Access.find({ "access_granted.userId": user._id }).populate('projectId');
+        const accessRecords = await Access.find({ "access_granted.userId": user._id, isDeleted: false })
+            .populate({ path: 'projectId', match: { isDeleted: false } });
         
         const projects = [
             ...ownedProjects.map(p => ({
                 id: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
-            ...accessRecords.map((record) => {
+            ...accessRecords
+                .filter((record: any) => record.projectId)
+                .map((record) => {
                  const a = record as unknown as (IAccess & { projectId: IProject });
                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
                  // @ts-ignore 
@@ -431,16 +434,19 @@ router.post('/login', async (req: Request, res: Response) => {
         
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        const ownedProjects = await Project.find({ ownerId: user._id });
+        const ownedProjects = await Project.find({ ownerId: user._id, isDeleted: false });
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        const accessRecords = await Access.find({ "access_granted.userId": user._id }).populate('projectId');
+        const accessRecords = await Access.find({ "access_granted.userId": user._id, isDeleted: false })
+            .populate({ path: 'projectId', match: { isDeleted: false } });
         
         const projects = [
             ...ownedProjects.map(p => ({
                 id: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
-            ...accessRecords.map((record) => {
+            ...accessRecords
+                .filter((record: any) => record.projectId)
+                .map((record) => {
                  const a = record as unknown as (IAccess & { projectId: IProject });
                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
                  // @ts-ignore
@@ -594,31 +600,57 @@ router.get('/user', authenticate, async (req: Request, res: Response) => {
         // Fetch projects for session restore
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        const ownedProjects = await Project.find({ ownerId: user._id });
+        const ownedProjects = await Project.find({ ownerId: user._id, isDeleted: false });
+
+        console.log(`[Auth/User] Found ${ownedProjects.length} owned projects for user ${user._id}`);
+
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        const accessRecords = await Access.find({ "access_granted.userId": user._id }).populate('projectId');
+        const accessRecords = await Access.find({ "access_granted.userId": user._id, isDeleted: false })
+            .populate({ path: 'projectId', match: { isDeleted: false } })
+            .populate('authorId', 'name');
+
+        console.log(`[Auth/User] Found ${accessRecords.length} access records`);
         
         const projects = [
             ...ownedProjects.map(p => ({
-                id: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
+                id: p.roomId, 
+                name: p.name, 
+                role: 'owner', 
+                author: user.name, 
+                // Ensure Date -> Number conversion to match interface
+                lastAccessed: p.updatedAt ? new Date(p.updatedAt).getTime() : Date.now()
             })),
             ...accessRecords.map((record) => {
-                 const a = record as unknown as (IAccess & { projectId: IProject });
+                 const a = record as unknown as (IAccess & { projectId: IProject, authorId: { name: string } });
                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
                  // @ts-ignore
                  // Check valid population
-                 if(!a.projectId || !a.projectId.roomId) return null;
+                 if(!a.projectId || !a.projectId.roomId) {
+                     console.warn(`[Auth/User] Access record ${a._id} has invalid/missing Project reference`, a.projectId);
+                     return null;
+                 }
                  
                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
                  // @ts-ignore
                  const u = a.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
+                 
+                 // Handle Author Name safely
+                 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                 // @ts-ignore
+                 const authorName = a.authorId ? a.authorId.name : 'Unknown';
 
                  return {
-                    id: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
+                    id: a.projectId.roomId, 
+                    name: a.projectId.name, 
+                    role: u ? u.role : 'Viewer', 
+                    author: authorName, 
+                    lastAccessed: a.updatedAt ? new Date(a.updatedAt).getTime() : Date.now()
                  };
             }).filter(p => !!p)
         ];
+
+        console.log(`[Auth/User] Returning ${projects.length} total projects`);
 
         const userObj = {
             id: user._id,

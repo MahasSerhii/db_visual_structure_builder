@@ -21,9 +21,18 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
     //    For now, checkReadOnly() in clearHistory handles permission basics, and backend checks 'admin'/'host'
     const canClear = !isReadOnly && history.length > 0;
 
-    const handleRevert = (snapshot: GraphSnapshot | HistoryItem) => {
-        if (confirm(t('history.revertConfirm'))) {
-             restoreSnapshot(snapshot as Partial<HistoryItem & GraphSnapshot>);
+    const handleRevert = (itemOrSnapshot: GraphSnapshot | HistoryItem) => {
+        let snap: GraphSnapshot | undefined;
+        // Check if it's already a snapshot (has nodes array)
+        if ('nodes' in itemOrSnapshot) {
+             snap = itemOrSnapshot as GraphSnapshot;
+        } else {
+             // It's a HistoryItem
+             snap = (itemOrSnapshot as HistoryItem).snapshot;
+        }
+
+        if (snap && confirm(t('history.revertConfirm'))) {
+             restoreSnapshot(snap);
              onClose();
         }
     };

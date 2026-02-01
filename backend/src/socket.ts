@@ -207,6 +207,12 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                         const userSessions = await Session.find({ userId: session.userId });
                         const activeRooms = [...new Set(userSessions.map(s => s.roomId))];
                         
+                        // Force Logout for all user sockets
+                        const userSocketIds = userSessions.map(s => s.socketId);
+                        userSocketIds.forEach(sid => {
+                            io.to(sid).emit('force:logout');
+                        });
+
                         await Session.deleteMany({ userId: session.userId });
                         console.log(`User ${session.userId} logged out. Cleared ${userSessions.length} sessions.`);
 

@@ -19,6 +19,7 @@ interface GraphContextType {
     config: Partial<UserProfile>;
     userProfile: UserProfile;
     userId: string | null;
+    currentUserEmail: string | null;
     mySocketId: string | null;
     updateUserProfile: (profile: Partial<UserProfile>) => void;
     isLoading: boolean;
@@ -26,6 +27,8 @@ interface GraphContextType {
     retryConnection: () => Promise<void>;
     setNodes: (nodes: NodeData[]) => void;
     setEdges: (edges: EdgeData[]) => void;
+    setComments: (comments: Comment[]) => void; // <--- Added setComments
+    setConfig: React.Dispatch<React.SetStateAction<Partial<UserProfile>>>; // <--- Added setConfig
     addNode: (node: NodeData) => Promise<void>;
     updateNode: (node: NodeData) => Promise<void>;
     deleteNode: (id: string) => Promise<void>;
@@ -36,6 +39,7 @@ interface GraphContextType {
     updateComment: (comment: Comment) => void;
     deleteComment: (id: string) => void;
     refreshData: (isCoolUpdate?: boolean) => Promise<void>;
+    refreshProjects: () => Promise<void>; // <--- Added refreshProjects
     currentRoomId: string | null;
     setCurrentRoomId: (id: string | null) => void;
     updateConfig: (newConfig: Partial<UserProfile>) => void;
@@ -67,6 +71,8 @@ interface GraphContextType {
     resolveSessionConflict: (force: boolean) => void;
     sessionKicked: boolean;
     acknowledgeSessionKicked: () => void;
+    projectDeletedEvent: boolean;
+    setProjectDeletedEvent: (val: boolean) => void;
 }
 
 export interface GraphSnapshot {
@@ -99,7 +105,10 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connected');
     const connectionStatusRef = useRef(connectionStatus);
     useEffect(() => { connectionStatusRef.current = connectionStatus; }, [connectionStatus]);
-    
+
+    // Stable Ref for CurrentRoomId to use in Socket Callbacks
+    const currentRoomIdRef = useRef<string | null>(null);
+
     // Persistence: Initialize from LocalStorage or Prop
     const [currentRoomId, _setCurrentRoomId] = useState<string | null>(() => {
         // If this is a specific tab initialization (multi-tab mode), prioritize its prop
@@ -126,6 +135,8 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         return localStorage.getItem('current_room_id');
     });
 
+    useEffect(() => { currentRoomIdRef.current = currentRoomId; }, [currentRoomId]);
+
     // --- WORKSPACE INTEGRATION ---
     // Safely attempt to sync with workspace tabs.
     // In a multi-tab environment, we must keep the workspace state in sync with the internal graph state.
@@ -148,14 +159,9 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
     });
     
     // Sync RoomID and LiveStatus to Tab Title/Metadata
-    useEffect(() => {
-        if (tabId) {
-            updateTab(tabId, { 
-                roomId: currentRoomId,
-                isLive: isLiveMode
-            });
-        }
-    }, [currentRoomId, isLiveMode, tabId, updateTab]);
+    // This effect must rely on `projectDeletedEvent` which is defined later.
+    // OPTIMIZATION: Move this definition after `projectDeletedEvent` definition or move that state up.
+    // Moving this useEffect down after `projectDeletedEvent` is declared.
 
     const [isTransitioningToLive, setTransitioningToLive] = useState(false);
 
@@ -198,6 +204,7 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         lastUpdated: 0 
     }));
     const [userId, setUserId] = useState<string | null>(() => localStorage.getItem('my_user_id'));
+    const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
     const [config, setConfig] = useState<Partial<UserProfile>>(() => {
         try {
@@ -306,6 +313,8 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                             lastUpdated: u.profileUpdatedAt || Date.now()
                         }));
 
+                        if (u.email) setCurrentUserEmail(u.email);
+
                         // Restore Configuration State from User Profile
                         setConfig(prev => {
                             const next = { ...prev };
@@ -338,6 +347,35 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
             return saved ? JSON.parse(saved) : [];
         } catch(e) { void e; return []; }
     });
+
+    // Sync Saved Projects across tabs (Browser Windows + Workspace Tabs)
+    useEffect(() => {
+        // 1. Handle Native Storage Event (Other Browser Tabs)
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === 'saved_projects' && e.newValue) {
+                try {
+                    setSavedProjects(JSON.parse(e.newValue));
+                } catch (e) { console.error("Sync projects parse error", e); }
+            }
+        };
+
+        // 2. Handle Custom Event (Other Workspace Tabs in same Window)
+        const handleLocalSync = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            if (customEvent.detail && customEvent.detail.projects) {
+                setSavedProjects(customEvent.detail.projects);
+            }
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        window.addEventListener('app:projects-sync', handleLocalSync);
+        
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('app:projects-sync', handleLocalSync);
+        };
+    }, []);
+
     const [authProvider, setAuthProvider] = useState<'email' | 'google' | 'apple'>(() => 
         (localStorage.getItem('auth_provider') as 'email' | 'google' | 'apple') || 'email'
     );
@@ -364,12 +402,27 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
 
     const [sessionConflict, setSessionConflict] = useState(false);
     const [sessionKicked, setSessionKicked] = useState(false);
-
-
+    const [projectDeletedEvent, setProjectDeletedEvent] = useState(false); // <--- New State
 
     const acknowledgeSessionKicked = useCallback(() => {
         setSessionKicked(false);
     }, []);
+    
+    // Reset deleted event when room changes
+    useEffect(() => {
+        setProjectDeletedEvent(false);
+    }, [currentRoomId]);
+
+    // Sync RoomID, LiveStatus and Alert to Tab Title/Metadata
+    useEffect(() => {
+        if (tabId) {
+            updateTab(tabId, { 
+                roomId: currentRoomId,
+                isLive: isLiveMode,
+                hasAlert: projectDeletedEvent // Sync alert state
+            });
+        }
+    }, [currentRoomId, isLiveMode, tabId, updateTab, projectDeletedEvent]);
 
     useEffect(() => {
         if (!socketRef.current) return;
@@ -541,6 +594,25 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                  setIsLoading(false); // Stop loading spinner
              });
 
+             socket.on('room:deleted', () => {
+                 console.warn("Room Deleted Event Received");
+                
+                // PERSISTENCE FIX: Save to Deleted Cache immediately
+                try {
+                    const currentId = currentRoomIdRef.current; // Use Ref for reliable closure
+                    if (currentId) {
+                        const KEY = 'deleted_rooms_cache';
+                        const deleted = JSON.parse(localStorage.getItem(KEY) || '[]');
+                        if (!deleted.includes(currentId)) {
+                            deleted.push(currentId);
+                            localStorage.setItem(KEY, JSON.stringify(deleted));
+                        }
+                    }
+                } catch(e) { /* ignore */ }
+
+                setProjectDeletedEvent(true);
+            });
+
              socket.on('project:settings', (data: { config?: ProjectConfig; backgroundColor?: string }) => {
                  setConfig(prev => {
                      const next = { ...prev };
@@ -586,7 +658,16 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                  socket.off('presence:update');
              };
         }
-    }, [currentRoomId, isAuthenticated, userProfile.name, userProfile.color, isUserVisible, authProvider, setCurrentRoomId, setLiveMode]); // Re-join if profile changes
+    }, [
+      currentRoomId, 
+      isAuthenticated, 
+      userProfile.name, 
+      userProfile.color, 
+      isUserVisible, 
+      authProvider, 
+      setCurrentRoomId, 
+      setLiveMode
+    ]);
 
 
 
@@ -597,6 +678,7 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         setIsAuthenticated(true);
         setAuthProvider(provider);
         setSavedProjects(projects);
+        setCurrentUserEmail(email);
 
         // Sync Logic: Compare Local vs Server Timestamp
         const serverTime = dbUserProfile?.profileUpdatedAt ? new Date(dbUserProfile.profileUpdatedAt).getTime() : 0;
@@ -753,46 +835,78 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         }
     };
 
-    const logout = useCallback(async () => {
-        // 0. Notify Backend to clear sessions
-        if (socketRef.current) {
-            socketRef.current.emit('auth:logout');
+    const logout = useCallback(async (broadcast: boolean | unknown = true) => {
+        // 0. Notify Backend & Other Tabs
+        if (broadcast !== false) {
+            if (socketRef.current) {
+                socketRef.current.emit('auth:logout');
+            }
+            localStorage.setItem('app_logout_event', Date.now().toString());
         }
-        
+
         // Give backend a moment to process logout before cutting client
         await new Promise(r => setTimeout(r, 100));
 
-        // 1. Clear IndexedDB (Best Effort)
-        try {
-            await deleteWholeDB();
-        } catch(e: unknown) {
-            console.error("Failed to delete DB on logout", e);
-        }
-
-        // 2. Clear Local & Session Storage - FORCE EVERYTHING
-        localStorage.clear(); 
-        sessionStorage.clear();
-        
-        // Double check specific sensitive keys to be absolutely sure
+        // 1. SOFT DATA CLEARING (Keep Local Work)
+        // Only clear authentication data, preserve Graph Data for "Offline/Guest" viewing
         localStorage.removeItem('auth_token');
-        localStorage.removeItem('app_config');
-        localStorage.removeItem('current_room_id');
         localStorage.removeItem('my_user_id');
         localStorage.removeItem('my_user_name');
         localStorage.removeItem('my_user_color');
+        localStorage.removeItem('saved_projects'); 
+        localStorage.removeItem('auth_provider');
+        localStorage.removeItem('session_token'); // Just in case
 
-        // 3. Reset State
+        // 2. RESET AUTH STATE ONLY
         setIsAuthenticated(false);
+        setUserProfile({ name: 'Guest', color: '#6366F1' });
         setSavedProjects([]);
-        setNodes([]);
-        setEdges([]);
-        setComments([]);
-        setUserProfile({ name: 'User', color: '#6366F1' });
         
-        // 4. Force Reload to ensure clean slate AND strip query params (token, room, etc.)
-        // This prevents auto-relogin from URL params
-        window.location.href = window.location.origin + window.location.pathname;
-    }, []);
+        // 3. DISCONNECT (Convert to Local/Offline)
+        if (currentRoomId && socketRef.current) {
+             socketRef.current.emit('leave-room', currentRoomId);
+        }
+        
+        // Mark as disconnected but keep data visible
+        setLiveMode(false); 
+        // connectionStatus might auto-update via socket events, but we force it for UI
+        setConnectionStatus('disconnected'); 
+        
+        // Optional: Notify user
+        // console.log("Logged out. Switched to Offline mode.");
+    }, [currentRoomId]);
+
+    // Sync Logout across tabs and socket
+    useEffect(() => {
+        // 1. Socket Force Logout
+        const handleForceLogout = () => {
+             console.log("Received Force Logout Signal");
+             logout(false); // Pass false to skip re-broadcasting
+        };
+
+        if (socketRef.current) {
+             socketRef.current.on('force:logout', handleForceLogout);
+        }
+
+        // 2. Cross-Tab Storage Logout
+        const handleStorageLogout = (e: StorageEvent) => {
+            if (e.key === 'app_logout_event' && e.newValue) {
+                const timestamp = parseInt(e.newValue);
+                if (Date.now() - timestamp < 2000) { 
+                    logout(false);
+                }
+            }
+        };
+        
+        window.addEventListener('storage', handleStorageLogout);
+
+        return () => {
+            if (socketRef.current) {
+                 socketRef.current.off('force:logout', handleForceLogout);
+            }
+            window.removeEventListener('storage', handleStorageLogout);
+        };
+    }, [logout]);
 
     // Global Active Comment State (for Thread Modal that can differ from List Modal)
     const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
@@ -926,6 +1040,12 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                     
                     if (data.project) {
                         const projConf: ProjectConfig = (data.project.config as ProjectConfig) || {};
+                        
+                        // FIX: Update Tab Title with actual Project Name from Backend
+                        if (tabId && data.project.name) {
+                            updateTab(tabId, { title: data.project.name });
+                        }
+
                         // Merge Strategy:
                         // 1. Keep current User Preferences (lang, theme, etc) from `prev` (which is sync'd from User Profile)
                         // 2. Adopt Project-specific Settings (canvasBg) from Project Config if present.
@@ -1000,7 +1120,7 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                     } else {
                          // Check if error is specifically NO_ACCESS (403 or similar)
                          // The apiErr object might have response data if it's an axios/fetch error wrapper
-                         if (errMsg.includes('NO_ACCESS') || errMsg.includes('no access') || errMsg.includes('403')) {
+                         if (errMsg.includes('NO_ACCESS') || errMsg.includes('no access') || errMsg.includes('403') || errMsg.includes('404')) {
                              setConnectionStatus('failed'); // or disconnected
                              // setLiveMode(false); // Maybe force offline?
                              // Don't clear room ID immediately so user sees where they failed? 
@@ -1014,7 +1134,11 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                              url.searchParams.delete('token');
                              window.history.replaceState({}, document.title, url.pathname);
 
-                             alert("You don't have access to this room.");
+                             if(!errMsg.includes('404')) {
+                                alert("You don't have access to this room.");
+                             } else {
+                                console.warn("Room not found (404). Clearing session.");
+                             }
                              setIsLoading(false);
                              return;
                          }
@@ -1049,7 +1173,7 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                  setIsLoading(false);
              }
         }
-    }, [currentRoomId, isAuthenticated, isLiveMode, logout, setCurrentRoomId, setLiveMode]); // Removed connectionStatus from deps to avoid loop
+    }, [currentRoomId, isAuthenticated, isLiveMode, logout, setCurrentRoomId, setLiveMode, tabId, updateTab]); // Removed connectionStatus from deps to avoid loop
     
     // We need to trigger the force logic
     const resolveSessionConflict = useCallback((force: boolean) => {
@@ -1136,6 +1260,34 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         socketRef.current.emit('comment:delete', { roomId: currentRoomId, id });
     };
     
+    const refreshProjects = useCallback(async () => {
+        if (!isAuthenticated) return;
+        try {
+            const res = await authApi.getUser();
+            if (res && res.projects && Array.isArray(res.projects)) {
+                const projects = res.projects as SavedProject[];
+                setSavedProjects(projects);
+                localStorage.setItem('saved_projects', JSON.stringify(projects));
+                
+                // Dispatch local event for other tabs in same window
+                window.dispatchEvent(new CustomEvent('app:projects-sync', { 
+                    detail: { projects } 
+                }));
+            }
+        } catch(e) { console.warn("Project Refresh Failed", e); }
+    }, [isAuthenticated]);
+
+    // FIX: Trigger project list refresh when connection is established
+    // This ensures that if we just gained access to a room (lazy link), it appears in our list.
+    // NOTE: Commented out to prevent potential race conditions where partial list overwrites global state
+    /*
+    useEffect(() => {
+        if (connectionStatus === 'connected' && isAuthenticated) {
+           refreshProjects();
+        }
+    }, [connectionStatus, isAuthenticated, refreshProjects]);
+    */
+
     // Check ReadOnly Mode
     const checkReadOnly = () => {
         if (isReadOnly) {
@@ -1530,11 +1682,11 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
     return (
         <GraphContext.Provider value={{
             nodes, edges, comments, config, isLoading, connectionStatus, retryConnection,
-            setNodes, setEdges,
+            setNodes, setEdges, setComments, setConfig,
             addNode, updateNode, deleteNode,
             addEdge, updateEdge, deleteEdge,
             addComment, updateComment, deleteComment,
-            refreshData,
+            refreshData, refreshProjects,
             currentRoomId, setCurrentRoomId,
             activeCommentId, setActiveCommentId,
             updateConfig, updateProjectBackground,
@@ -1544,10 +1696,10 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
             t, isAuthenticated, authProvider, savedProjects, activeUsers, login, logout,
             isTransitioningToLive, setTransitioningToLive, clearHistory,
             isUserVisible, toggleUserVisibility,
-            userProfile, updateUserProfile, userId, mySocketId,
+            userProfile, updateUserProfile, userId, currentUserEmail, mySocketId,
             sessionConflict, resolveSessionConflict,
             sessionKicked, acknowledgeSessionKicked,
-            tabId
+            tabId, projectDeletedEvent, setProjectDeletedEvent
         }}>
             {children}
         </GraphContext.Provider>

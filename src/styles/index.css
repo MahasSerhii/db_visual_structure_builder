@@ -117,3 +117,13 @@ body.dark .bg-gray-50\/50 {
 .locked-cursor {
     cursor: pointer;
 }
+
+/* Alert Animation */
+@keyframes twitch-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px) rotate(-1deg); }
+  75% { transform: translateX(3px) rotate(1deg); }
+}
+.animate-twitch {
+  animation: twitch-shake 0.4s cubic-bezier(.36,.07,.19,.97) infinite;
+}

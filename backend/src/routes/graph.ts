@@ -16,6 +16,8 @@ import Access from '../models/Access';
 
 import User, { IUser } from '../models/User';
 
+import Session from '../models/Session';
+
 import jwt, { JwtPayload } from 'jsonwebtoken';
 
 import { getIO } from '../socket';
@@ -95,7 +97,9 @@ const authenticate = async (req: AuthRequest, res: Response, next: NextFunction)
 // Middleware to check project access
 const checkAccess = (roleRequired: string[] = ['Viewer', 'Editor', 'Admin', 'host']) => {
     return async (req: AuthRequest, res: Response, next: NextFunction) => {
-        const projectIdStr = req.params.projectId;
+        // Support BOTH projectId and roomId parameter names
+        // Some routes use /:projectId/..., others use /:roomId/...
+        const projectIdStr = req.params.projectId || req.params.roomId;
 
         try {
             const project = await Project.findOne({ roomId: projectIdStr });
@@ -874,26 +878,33 @@ router.put('/:projectId/background', authenticate, checkAccess(['Editor', 'Admin
 });
 
 
-// DELETE Project (Soft)
-router.delete('/:projectId', authenticate, checkAccess(['host']), async (req: AuthRequest, res: Response) => {
+// DELETE Project (Hard Delete Children, Soft Delete Project)
+router.delete('/:roomId', authenticate, checkAccess(['host']), async (req: AuthRequest, res: Response) => {
     try {
         if (!req.project) return res.status(401).json({ error: "Context missing" });
         const project = req.project;
-
-        project.isDeleted = true;
-        await project.save();
         
-        // Soft delete all children
+        // In checkAccess middleware, we look up by roomId (parameter name in route matches now)
+        // Ensure we are deleting by Internal Object ID for relations
         const projectId = project._id;
 
-        await Node.updateMany({ projectId }, { isDeleted: true, deletedAt: new Date() });
-        await Edge.updateMany({ projectId }, { isDeleted: true, deletedAt: new Date() });
-        await Comment.updateMany({ projectId }, { isDeleted: true, deletedAt: new Date() });
+        // Hard Delete Children (Nodes, Edges, Comments, History, Access, Sessions)
+        await Node.deleteMany({ projectId });
+        await Edge.deleteMany({ projectId });
+        await Comment.deleteMany({ projectId });
+        await History.deleteMany({ projectId });
+        await Access.updateMany({ projectId }, { isDeleted: true }); // Soft delete access records
+        await Session.deleteMany({ roomId: project.roomId }); // Kill active sessions
+
+        // Soft Delete Project itself (Metadata Retention)
+        project.isDeleted = true;
+        await project.save();
         
         getIO().to(project.roomId).emit('room:deleted');
         
         res.json({ success: true });
-    } catch {
+    } catch(e) {
+        console.error("Delete Project Failed", e);
         res.status(500).json({ error: "Delete Project Failed" });
     }
 });

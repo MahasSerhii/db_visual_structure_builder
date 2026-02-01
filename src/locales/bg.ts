@@ -314,7 +314,7 @@ export const bg: Record<string, string> = {
     "history.clearFailed": "Неуспешно изчистване на историята",
     "info": "Инфо",
     "role.editor": "(Редактор)",
-    "role.host": "(Домакин)",
+    "role.host": "(Админ)",
     "role.viewer": "(Зрител)",
     "todo.addMain": "Добави нова основна цел...",
     "todo.addSub": "Добави подзадача...",

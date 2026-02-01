@@ -314,7 +314,7 @@ export const de: Record<string, string> = {
     "history.clearFailed": "Verlauf konnte nicht gelöscht werden",
     "info": "Info",
     "role.editor": "(Bearbeiter)",
-    "role.host": "(Gastgeber)",
+    "role.host": "(Admin)",
     "role.viewer": "(Betrachter)",
     "todo.addMain": "Neues Hauptziel hinzufügen...",
     "todo.addSub": "Teilaufgabe hinzufügen...",

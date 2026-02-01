@@ -15,11 +15,11 @@ export const WorkspaceLayout: React.FC = () => {
                 {tabs.map(tab => {
                     // Logic to display title properly:
                     // 1. If tab has manual title, use it.
-                    // 2. If connected to a room, use "Room XXXX".
+                    // 2. If connected to a room, usage ID or "New Tab".
                     // 3. Otherwise "New Tab".
                     // NOTE: This relies on WorkspaceContext being up to date. 
                     // GraphContext now syncs `roomId` back to WorkspaceContext.
-                    const displayTitle = tab.title !== 'New Tab' ? tab.title : (tab.roomId ? `Room ${tab.roomId.slice(-4)}` : 'New Tab');
+                    const displayTitle = tab.title !== 'New Tab' ? tab.title : (tab.roomId ? tab.roomId : 'New Tab');
                     
                     return (
                         <div 
@@ -28,22 +28,25 @@ export const WorkspaceLayout: React.FC = () => {
                             title={displayTitle} // Tooltip on hover
                             className={`
                                 group flex items-center gap-2 px-3 py-1.5 text-xs rounded-t-md cursor-pointer min-w-[100px] max-w-[200px] flex-1 shrink relative border-t border-x transition-all 
-                                ${activeTabId === tab.id 
+                                ${tab.hasAlert ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 animate-twitch z-20 font-bold' : ''}
+                                ${activeTabId === tab.id && !tab.hasAlert
                                     ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold border-gray-300 dark:border-slate-700 border-b-white dark:border-b-slate-800 mb-[-1px] z-10' 
-                                    : 'bg-gray-100 dark:bg-slate-950 text-gray-500 dark:text-gray-400 border-transparent hover:bg-gray-50 dark:hover:bg-slate-900'
+                                    : (activeTabId !== tab.id && !tab.hasAlert ? 'bg-gray-100 dark:bg-slate-950 text-gray-500 dark:text-gray-400 border-transparent hover:bg-gray-50 dark:hover:bg-slate-900' : '')
                                 }
                             `}
                         >
                             {/* Status Dot */}
                             <div className={`w-2 h-2 shrink-0 rounded-full ${
-                                tab.isLive 
-                                    ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.4)]' // Live: Green Glow
-                                    : tab.roomId 
-                                        ? 'bg-indigo-400 dark:bg-indigo-500' // Local Mode: Indigo
-                                        : 'bg-gray-300 dark:bg-gray-600' // Empty: Grey
+                                tab.hasAlert 
+                                    ? 'bg-red-500 animate-pulse'
+                                    : tab.isLive 
+                                        ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.4)]'
+                                        : tab.roomId 
+                                            ? 'bg-indigo-400 dark:bg-indigo-500' 
+                                            : 'bg-gray-300 dark:bg-gray-600'
                             }`} />
                             
-                            <span className="truncate flex-1">{displayTitle}</span>
+                            <span className="truncate flex-1">{displayTitle} {tab.hasAlert && '(Deleted!)'}</span>
                             
                             <button 
                                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}

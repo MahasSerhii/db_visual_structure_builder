@@ -314,7 +314,7 @@ export const es: Record<string, string> = {
     "history.clearFailed": "Error al borrar el historial",
     "info": "Info",
     "role.editor": "(Editor)",
-    "role.host": "(Anfitrión)",
+    "role.host": "(Admin)",
     "role.viewer": "(Espectador)",
     "todo.addMain": "Agregar nuevo objetivo principal...",
     "todo.addSub": "Agregar subtarea...",
