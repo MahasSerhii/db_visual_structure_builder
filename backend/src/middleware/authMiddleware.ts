@@ -4,12 +4,13 @@ import User, { IUser } from '../models/User';
 import Project, { IProject } from '../models/Project';
 import Access from '../models/Access';
 import { JWT_SECRET } from '../config';
+import { UserRole } from '../types/enums';
 
 // Extended Request Interface
 export interface AuthRequest extends Request {
     user?: IUser;
     project?: IProject;
-    role?: string;
+    role?: UserRole;
 }
 
 // Middleware to verify token and get user
@@ -40,10 +41,9 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
 };
 
 // Middleware to check project access
-export const checkAccess = (roleRequired: string[] = ['Viewer', 'Editor', 'Admin', 'host']) => {
+export const checkAccess = (roleRequired: UserRole[] = [UserRole.VIEWER, UserRole.EDITOR, UserRole.ADMIN]) => {
     return async (req: AuthRequest, res: Response, next: NextFunction) => {
         // Support BOTH projectId and roomId parameter names
-        // Some routes use /:projectId/..., others use /:roomId/...
         const projectIdStr = req.params.projectId || req.params.roomId;
 
         try {
@@ -55,9 +55,9 @@ export const checkAccess = (roleRequired: string[] = ['Viewer', 'Editor', 'Admin
             if (!req.user) return res.status(401).json({ error: "User not authenticated" });
             const user = req.user;
             
-            // 1. Host has ALL permissions (God Mode)
+            // 1. Owner is treated as Admin (God Mode)
             if (project.ownerId.toString() === user._id.toString()) {
-                req.role = 'host';
+                req.role = UserRole.ADMIN;
                 return next();
             }
 
@@ -89,19 +89,9 @@ export const checkAccess = (roleRequired: string[] = ['Viewer', 'Editor', 'Admin
                 });
             }
 
-            // 3. Role Hierarchy Check
-            // We define hierarchy: Viewer < Editor < Admin < host
-            const roleHierarchy: Record<string, number> = {
-                'Viewer': 1,
-                'Editor': 2,
-                'Admin': 3,
-                'host': 4
-            };
-
-            const userRoleScore = roleHierarchy[userAccess.role] || 0;
-            const requiredScores = roleRequired.map(r => roleHierarchy[r] || 0);
-            
-            if (!roleRequired.includes(userAccess.role) && req.role !== 'host') {
+            // 3. Check against required roles
+            // Since roleRequired lists ALL valid roles for this operation, simple inclusion check is enough.
+            if (!roleRequired.includes(userAccess.role as UserRole)) {
                  return res.status(403).json({ 
                     error: "Insufficient Permissions",
                     required: roleRequired,
@@ -109,7 +99,7 @@ export const checkAccess = (roleRequired: string[] = ['Viewer', 'Editor', 'Admin
                 });
             }
 
-            req.role = userAccess.role;
+            req.role = userAccess.role as UserRole;
             next();
 
         } catch (e) {

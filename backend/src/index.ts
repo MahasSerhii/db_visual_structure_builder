@@ -7,6 +7,8 @@ import authRoutes from './routes/auth';
 import graphRoutes from './routes/graph';
 import * as projectController from './controllers/projectController'; // Import controller
 import { authenticate } from './middleware/authMiddleware'; // Import middleware
+import { errorHandler } from './middleware/errorMiddleware';
+import { NotFoundException } from './exceptions/HttpExceptions';
 import { initSocket } from './socket';
 
 const app = express();
@@ -46,6 +48,15 @@ app.get('/', (req, res) => {
   res.send('Visual DB Viewer Backend API');
 });
 
+// Handle undefined routes
+app.all('*', (req, res, next) => {
+  next(new NotFoundException(`Route ${req.originalUrl} not found`));
+});
+
+// Global Error Handler
+app.use(errorHandler);
+
 server.listen(PORT, () => {
+
   console.log(`Server running on port ${PORT}`);
 });

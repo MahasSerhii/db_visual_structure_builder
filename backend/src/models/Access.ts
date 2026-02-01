@@ -1,10 +1,11 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { UserRole } from '../types/enums';
 
 export interface IAccessUser {
     userId: mongoose.Types.ObjectId;
     authorised: boolean; // default false, true on first entry
     visible: boolean; // default true
-    role: 'Admin' | 'Editor' | 'Viewer';
+    role: UserRole;
     invitedEmail?: string; // Optional: keep for reference if needed
     joinedAt?: Date;
 }
@@ -23,7 +24,7 @@ const AccessUserSchema: Schema = new Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     authorised: { type: Boolean, default: false },
     visible: { type: Boolean, default: true },
-    role: { type: String, enum: ['Admin', 'Editor', 'Viewer'], default: 'Viewer' },
+    role: { type: String, enum: Object.values(UserRole), default: UserRole.VIEWER },
     invitedEmail: { type: String },
     joinedAt: { type: Date }
 }, { _id: false }); // sub-docs don't strictly need _id unless we want to query by access-record-id

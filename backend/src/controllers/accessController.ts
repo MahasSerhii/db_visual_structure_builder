@@ -3,104 +3,110 @@ import Access from '../models/Access';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { getIO } from '../socket';
 import { IUser } from '../models/User';
+import { catchAsync } from '../middleware/errorMiddleware';
+import { t } from '../utils/i18n';
+import { UserRole } from '../types/enums';
+import { 
+    UnauthorizedException, 
+    BadRequestException,
+    ForbiddenException,
+    NotFoundException
+} from '../exceptions/HttpExceptions';
 
-export const getAccessList = async (req: AuthRequest, res: Response) => {
-    try {
-        if (!req.project) return res.status(401).json({ error: "Context missing" });
-        const projectId = req.project._id;
+const getLang = (req: AuthRequest) => (req.user as any)?.language;
 
-        const accessDoc = await Access.findOne({ projectId })
-            .populate('access_granted.userId', 'name email');
+export const getAccessList = catchAsync(async (req: AuthRequest, res: Response) => {
+    if (!req.project) throw new UnauthorizedException(t(getLang(req), "error.history.context_missing"));
+    const projectId = req.project._id;
 
-        if (!accessDoc) {
-             return res.json({ success: true, users: [] });
-        }
+    const accessDoc = await Access.findOne({ projectId })
+        .populate('access_granted.userId', 'name email');
 
-        const users = accessDoc.access_granted.map((uItem) => {
-            const u = uItem as unknown as { userId: IUser & { _id: string }, invitedEmail?: string, role: string, visible: boolean, joinedAt: Date };
+    if (!accessDoc) {
+            return res.json({ success: true, users: [] });
+    }
 
-            return {
-                id: u.userId._id ?? u.userId,
-                userId: u.userId._id ?? u.userId,
-                name: u.userId.name || 'Unknown',
-                email: u.userId.email || u.invitedEmail || 'Unknown',
-                role: u.role,
-                isVisible: u.visible,
-                isDeleted: false, 
-                invitedEmail: u.invitedEmail,
-                createdAt: u.joinedAt
-            };
-        });
+    const users = accessDoc.access_granted.map((uItem) => {
+        const u = uItem as unknown as { userId: IUser & { _id: string }, invitedEmail?: string, role: string, visible: boolean, joinedAt: Date };
 
-        res.json({ success: true, users });
-    } catch { res.status(500).json({ error: "Failed to fetch access list" }); }
-};
+        return {
+            id: u.userId._id ?? u.userId,
+            userId: u.userId._id ?? u.userId,
+            name: u.userId.name || 'Unknown',
+            email: u.userId.email || u.invitedEmail || 'Unknown',
+            role: u.role,
+            isVisible: u.visible,
+            isDeleted: false, 
+            invitedEmail: u.invitedEmail,
+            createdAt: u.joinedAt
+        };
+    });
 
-export const updateAccessRole = async (req: AuthRequest, res: Response) => {
-    try {
-        if (!req.project || !req.user || !req.role) return res.status(401).json({ error: "Context missing" });
-        const { targetUserId, role } = req.body;
-        const project = req.project;
-        const callerRole = req.role;
-        const callerId = req.user._id.toString();
+    res.json({ success: true, users });
+});
 
-        if (!['Admin', 'Editor', 'Viewer'].includes(role)) return res.status(400).json({ error: "Invalid Role" });
-        if (project.ownerId.toString() === targetUserId) return res.status(403).json({ error: "Cannot change project owner role" });
+export const updateAccessRole = catchAsync(async (req: AuthRequest, res: Response) => {
+    if (!req.project || !req.user || !req.role) throw new UnauthorizedException(t(getLang(req), "error.history.context_missing"));
+    const { targetUserId, role } = req.body;
+    const project = req.project;
+    const callerRole = req.role;
+    const callerId = req.user._id.toString();
 
-        if (callerRole === 'Editor') {
-            if (targetUserId === callerId) return res.status(403).json({ error: "Editors cannot change their own role" });
-            if (role === 'Admin') return res.status(403).json({ error: "Editors cannot promote users to Admin" });
-        }
+    // Check if role is valid enum value
+    if (!Object.values(UserRole).includes(role)) throw new BadRequestException("Invalid Role");
+    if (project.ownerId.toString() === targetUserId) throw new ForbiddenException("Cannot change project owner role");
 
-        const accessDoc = await Access.findOne({ projectId: project._id });
-        if (!accessDoc) return res.status(404).json({ error: "Access list not found" });
+    if (callerRole === UserRole.EDITOR) {
+        if (targetUserId === callerId) throw new ForbiddenException("Editors cannot change their own role");
+        if (role === UserRole.ADMIN) throw new ForbiddenException("Editors cannot promote users to Admin");
+    }
 
-        const memberIdx = accessDoc.access_granted.findIndex(u => u.userId.toString() === targetUserId);
-        if (memberIdx === -1) return res.status(404).json({ error: "User not found in project" });
-        
-        const targetMember = accessDoc.access_granted[memberIdx];
+    const accessDoc = await Access.findOne({ projectId: project._id });
+    if (!accessDoc) throw new NotFoundException("Access list not found");
 
-        if (callerRole === 'Editor' && targetMember.role === 'Admin') return res.status(403).json({ error: "Editors cannot modify Admins" });
+    const memberIdx = accessDoc.access_granted.findIndex(u => u.userId.toString() === targetUserId);
+    if (memberIdx === -1) throw new NotFoundException(t(getLang(req), "error.auth.user_not_found"));
+    
+    const targetMember = accessDoc.access_granted[memberIdx];
 
-        accessDoc.access_granted[memberIdx].role = role;
-        await accessDoc.save();
+    if (callerRole === UserRole.EDITOR && targetMember.role === UserRole.ADMIN) throw new ForbiddenException("Editors cannot modify Admins");
 
-        getIO().to(req.params.projectId).emit('access:updated', { userId: targetUserId, role });
+    accessDoc.access_granted[memberIdx].role = role;
+    await accessDoc.save();
 
-        res.json({ success: true, role });
-    } catch { res.status(500).json({ error: "Failed to update role" }); }
-};
+    getIO().to(req.params.projectId).emit('access:updated', { userId: targetUserId, role });
 
-export const removeAccess = async (req: AuthRequest, res: Response) => {
-    try {
-        if (!req.project || !req.user || !req.role) return res.status(401).json({ error: "Context missing" });
-        const { targetUserId } = req.params;
-        const project = req.project;
-        const callerRole = req.role;
-        const callerId = req.user._id.toString();
+    res.json({ success: true, role });
+});
 
-        if (project.ownerId.toString() === targetUserId) return res.status(403).json({ error: "Cannot remove project owner" });
+export const removeAccess = catchAsync(async (req: AuthRequest, res: Response) => {
+    if (!req.project || !req.user || !req.role) throw new UnauthorizedException(t(getLang(req), "error.history.context_missing"));
+    const { targetUserId } = req.params;
+    const project = req.project;
+    const callerRole = req.role;
+    const callerId = req.user._id.toString();
 
-        if (callerRole === 'Editor' && targetUserId === callerId) return res.status(403).json({ error: "Editors cannot remove themselves (Leave instead)" });
+    if (project.ownerId.toString() === targetUserId) throw new ForbiddenException("Cannot remove project owner");
 
-        const accessDoc = await Access.findOne({ projectId: project._id });
-        if (!accessDoc) return res.status(404).json({ error: "Access list not found" });
-        
-        const targetMember = accessDoc.access_granted.find(u => u.userId.toString() === targetUserId);
-        if (!targetMember) return res.status(404).json({ error: "User not involved" });
+    if (callerRole === UserRole.EDITOR && targetUserId === callerId) throw new ForbiddenException("Editors cannot remove themselves (Leave instead)");
 
-        if (callerRole === 'Editor' && targetMember.role === 'Admin') return res.status(403).json({ error: "Editors cannot remove Admins" });
+    const accessDoc = await Access.findOne({ projectId: project._id });
+    if (!accessDoc) throw new NotFoundException("Access list not found");
+    
+    const targetMember = accessDoc.access_granted.find(u => u.userId.toString() === targetUserId);
+    if (!targetMember) throw new NotFoundException(t(getLang(req), "error.auth.user_not_found"));
 
-        await Access.findOneAndUpdate(
-            { projectId: project._id },
-            { $pull: { access_granted: { userId: targetUserId } } }
-        );
+    if (callerRole === UserRole.EDITOR && targetMember.role === UserRole.ADMIN) throw new ForbiddenException("Editors cannot remove Admins");
 
-        getIO().to(req.params.projectId).emit('user:removed', {
-            userId: targetUserId,
-            message: `User removed from project by ${req.user.name}`
-        });
+    await Access.findOneAndUpdate(
+        { projectId: project._id },
+        { $pull: { access_granted: { userId: targetUserId } } }
+    );
 
-        res.json({ success: true, message: "User removed from project" });
-    } catch { res.status(500).json({ error: "Failed to remove user" }); }
-};
+    getIO().to(req.params.projectId).emit('user:removed', {
+        userId: targetUserId,
+        removerName: req.user.name
+    });
+
+    res.json({ success: true });
+});

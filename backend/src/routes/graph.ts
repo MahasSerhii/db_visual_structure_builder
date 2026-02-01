@@ -4,6 +4,7 @@ import * as graphController from '../controllers/graphController';
 import * as historyController from '../controllers/historyController';
 import * as accessController from '../controllers/accessController';
 import * as projectController from '../controllers/projectController';
+import { UserRole } from '../types/enums';
 
 const router = Router();
 
@@ -12,38 +13,39 @@ router.post('/init', authenticate, projectController.createProject);
 router.post('/clear-room', authenticate, graphController.clearGraph);
 
 // Graph Data
-router.get('/:projectId', authenticate, checkAccess(['Viewer', 'Editor', 'Admin', 'host']), graphController.getGraph);
-router.post('/:projectId/sync', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.syncGraph);
+router.get('/:projectId', authenticate, checkAccess([UserRole.VIEWER, UserRole.EDITOR, UserRole.ADMIN]), graphController.getGraph);
+router.post('/:projectId/sync', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.syncGraph);
 
 // Nodes
-router.post('/:projectId/node', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.addNode);
-router.put('/:projectId/node/:nodeId', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.updateNode);
-router.delete('/:projectId/node/:nodeId', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.deleteNode);
+router.post('/:projectId/node', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.addNode);
+router.put('/:projectId/node/:nodeId', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.updateNode);
+router.delete('/:projectId/node/:nodeId', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.deleteNode);
 
 // Edges
-router.post('/:projectId/edge', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.addEdge);
-router.put('/:projectId/edge/:edgeId', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.updateEdge);
-router.delete('/:projectId/edge/:edgeId', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.deleteEdge);
+router.post('/:projectId/edge', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.addEdge);
+router.put('/:projectId/edge/:edgeId', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.updateEdge);
+router.delete('/:projectId/edge/:edgeId', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.deleteEdge);
 
 // Comments
-router.post('/:projectId/comment', authenticate, checkAccess(['Viewer', 'Editor', 'Admin', 'host']), graphController.addComment);
-router.put('/:projectId/comment/:commentId', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.updateComment); 
-router.delete('/:projectId/comment/:commentId', authenticate, checkAccess(['Editor', 'Admin', 'host']), graphController.deleteComment);
+router.post('/:projectId/comment', authenticate, checkAccess([UserRole.VIEWER, UserRole.EDITOR, UserRole.ADMIN]), graphController.addComment);
+router.put('/:projectId/comment/:commentId', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.updateComment); 
+router.delete('/:projectId/comment/:commentId', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), graphController.deleteComment);
 
 // History
-router.get('/:projectId/history', authenticate, checkAccess(['Viewer', 'Editor', 'Admin', 'host']), historyController.getHistory);
-router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess(['Editor', 'Admin', 'host']), historyController.revertHistory);
-router.delete('/:projectId/history', authenticate, checkAccess(['Editor', 'Admin', 'host']), historyController.clearHistory);
+router.get('/:projectId/history', authenticate, checkAccess([UserRole.VIEWER, UserRole.EDITOR, UserRole.ADMIN]), historyController.getHistory);
+router.post('/:projectId/history/:historyId/revert', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), historyController.revertHistory);
+router.delete('/:projectId/history', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), historyController.clearHistory);
 
 // Access
-router.get('/:projectId/access', authenticate, checkAccess(['host', 'Editor', 'Viewer']), accessController.getAccessList);
-router.put('/:projectId/access', authenticate, checkAccess(['host', 'Admin', 'Editor']), accessController.updateAccessRole);
-router.delete('/:projectId/access/:targetUserId', authenticate, checkAccess(['host', 'Admin', 'Editor']), accessController.removeAccess);
+// Assuming Admin should also see access list
+router.get('/:projectId/access', authenticate, checkAccess([UserRole.ADMIN, UserRole.EDITOR, UserRole.VIEWER]), accessController.getAccessList);
+router.put('/:projectId/access', authenticate, checkAccess([UserRole.ADMIN, UserRole.EDITOR]), accessController.updateAccessRole);
+router.delete('/:projectId/access/:targetUserId', authenticate, checkAccess([UserRole.ADMIN, UserRole.EDITOR]), accessController.removeAccess);
 
 // Project
-router.delete('/:roomId', authenticate, checkAccess(['host', 'Admin']), projectController.deleteProject);
-router.put('/:projectId/background', authenticate, checkAccess(['Editor', 'Admin', 'host']), projectController.updateProjectBackground);
-router.put('/:projectId/config', authenticate, checkAccess(['Editor', 'Admin', 'host']), projectController.updateProjectConfig);
+router.delete('/:roomId', authenticate, checkAccess([UserRole.ADMIN]), projectController.deleteProject);
+router.put('/:projectId/background', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), projectController.updateProjectBackground);
+router.put('/:projectId/config', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), projectController.updateProjectConfig);
 
 export default router;
 

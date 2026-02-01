@@ -329,5 +329,18 @@ export const en: Record<string, string> = {
     "user.removeMessage": "Are you sure you want to remove this user from the room?",
     "user.removeTitle": "Remove User",
     "data.ph.roomId": "Enter Room Name",
-    "data.btn.connect": "Connect / Create"
+    "data.btn.connect": "Connect / Create",
+
+    // Errors
+    "error.INTERNAL_ERROR": "Internal Server Error. Please try again later.",
+    "error.BAD_REQUEST": "Bad Request. Please check your input.",
+    "error.UNAUTHORIZED": "Unauthorized. Please log in.",
+    "error.FORBIDDEN": "Access Denied.",
+    "error.NOT_FOUND": "Resource not found.",
+    "error.VALIDATION_ERROR": "Validation Error.",
+    "error.INVALID_ID": "Invalid ID format.",
+    "error.INVALID_TOKEN": "Invalid or expired token.",
+    "error.TOKEN_EXPIRED": "Your session has expired. Please log in again.",
+    "error.NETWORK_ERROR": "Network Error. Please check your connection."
 };
+

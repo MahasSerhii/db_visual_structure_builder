@@ -6,14 +6,18 @@ import Project, { IProject } from '../models/Project';
 import Access, { IAccess, IAccessUser } from '../models/Access';
 import { sendEmail } from '../utils/email';
 import { JWT_SECRET, CLIENT_URL } from '../config';
+import { catchAsync } from '../middleware/errorMiddleware';
+import { NotFoundException, BadRequestException, UnauthorizedException } from '../exceptions/HttpExceptions';
+import { t } from '../utils/i18n';
+import { UserRole } from '../types/enums';
 
 interface UserPayload extends JwtPayload {
     email: string;
     id: string;
 }
 
-export const inviteUser = async (req: Request, res: Response) => {
-    try {
+export const inviteUser = catchAsync(async (req: Request, res: Response) => {
+    // try { // Removing legacy try-catch
         const { email, roomId, configStr, permissions, hostName, projectName, origin } = req.body;
 
         console.log(`[Invite START] Email: ${email}, RoomId: ${roomId}, Permissions: ${permissions}`);
@@ -63,7 +67,7 @@ export const inviteUser = async (req: Request, res: Response) => {
              });
         }
         
-        const newRole = permissions === 'rw' ? 'Editor' : 'Viewer';
+        const newRole = permissions === 'rw' ? UserRole.EDITOR : UserRole.VIEWER;
         const existingIndex = accessDoc.access_granted.findIndex(u => u.userId.toString() === user!._id.toString());
         
         if (existingIndex > -1) {
@@ -106,35 +110,30 @@ export const inviteUser = async (req: Request, res: Response) => {
         const returnLink = req.body.skipEmail || process.env.NODE_ENV === 'development';
 
         res.json({ success: true, link: returnLink ? link : undefined });
-    } catch (e) {
-        const err = e as Error;
-        console.error("Invite Error Global:", err);
-        res.status(500).json({ error: err.message });
-    }
-};
+});
 
-export const validateInvite = async (req: Request, res: Response) => {
-    try {
-        const token = req.query.token as string;
+export const validateInvite = catchAsync(async (req: Request, res: Response) => {
+    const token = req.query.token as string;
 
-        if (!token) throw new Error("No token");
-        const decoded = jwt.verify(token, JWT_SECRET) as UserPayload & { roomId: string, configStr: string, permissions: string };
-        
-        const existingUser = await User.findOne({ email: decoded.email });
+    if (!token) throw new BadRequestException(t(undefined, "error.auth.invalid_token"));
+    
+    // Explicitly verify or let generic error handler catch JsonWebTokenError
+    const decoded = jwt.verify(token, JWT_SECRET) as UserPayload & { roomId: string, configStr: string, permissions: string };
+    
+    const existingUser = await User.findOne({ email: decoded.email });
 
-        res.json({
-            valid: true,
-            email: decoded.email,
-            isRegistered: !!existingUser,
-            roomId: decoded.roomId,
-            configStr: decoded.configStr,
-            permissions: decoded.permissions
-        });
-    } catch { res.status(400).json({ valid: false }); }
-};
+    res.json({
+        valid: true,
+        email: decoded.email,
+        isRegistered: !!existingUser,
+        roomId: decoded.roomId,
+        configStr: decoded.configStr,
+        permissions: decoded.permissions
+    });
+});
 
-export const register = async (req: Request, res: Response) => {
-    try {
+export const register = catchAsync(async (req: Request, res: Response) => {
+    // try {
         const { email, password, inviteToken, name, color } = req.body;
 
         console.log(`[Register Attempt] Email: ${email}`);
@@ -154,8 +153,8 @@ export const register = async (req: Request, res: Response) => {
              } catch(mailErr) {
                  console.error("Failed to send restoration email", mailErr);
              }
-
-             return res.json({ success: true, message: "User exists. Restoration link sent to email." });
+             
+             throw new BadRequestException(t(undefined, "error.auth.email_exists"));
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -223,22 +222,23 @@ export const register = async (req: Request, res: Response) => {
         };
         
         res.json({ token, user: userObj, projects: [] });
-    } catch (e) { 
-        console.error("Register Error Global:", e);
-        res.status(500).json({ error: "Register Failed" }); 
-    }
-};
+    // } catch (e) { 
+    //    console.error("Register Error Global:", e);
+    //    res.status(500).json({ error: "Register Failed" }); 
+    // }
+});
 
-export const login = async (req: Request, res: Response) => {
-    try {
+export const login = catchAsync(async (req: Request, res: Response) => {
+    // try {
         const { email, password, rememberMe, name, color } = req.body;
         const user = await User.findOne({ email });
         
-        if (!user) return res.status(404).json({ error: "User not found" });
+        // We can pass user language here if we find the user
+        if (!user) throw new NotFoundException(t(undefined, "error.auth.user_not_found"));
 
         const isMatch = await bcrypt.compare(password, user.password || '');
 
-        if (!isMatch) return res.status(401).json({ error: "Invalid Credentials" });
+        if (!isMatch) throw new UnauthorizedException(t(user.language, "error.auth.wrong_password"));
         
         if (!user.authorized) {
             user.authorized = true;
@@ -294,11 +294,11 @@ export const login = async (req: Request, res: Response) => {
         };
 
         res.json({ token, user: userObj, projects });
-    } catch(e) { 
-        console.error("Login Error", e);
-        res.status(500).json({ error: "Login Error" }); 
-    }
-};
+    // } catch(e) { 
+    //    console.error("Login Error", e);
+    //    res.status(500).json({ error: "Login Error" }); 
+    // }
+});
 
 export const verifyAccess = async (req: Request, res: Response) => {
     try {
@@ -324,11 +324,11 @@ export const verifyAccess = async (req: Request, res: Response) => {
        // If project does not exist yet, and we have a valid user, they might be about to create it.
        // Allow them to proceed so they can hit the /init endpoint.
        if (!project) {
-           return res.json({ allowed: true, role: 'host', status: 'project_not_found_but_user_valid' }); 
+           return res.json({ allowed: true, role: UserRole.ADMIN, status: 'project_not_found_but_user_valid' }); 
        }
 
        if (project.ownerId.toString() === user._id.toString()) {
-           return res.json({ allowed: true, role: 'host' });
+           return res.json({ allowed: true, role: UserRole.ADMIN });
        }
        
        // eslint-disable-next-line @typescript-eslint/ban-ts-comment

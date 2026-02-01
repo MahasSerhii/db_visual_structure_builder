@@ -1,5 +1,6 @@
 import React from 'react';
 import { ToastProvider } from './context/ToastContext';
+import { ErrorProvider } from './context/ErrorProvider';
 import { WorkspaceProvider } from './context/WorkspaceContext';
 import { WorkspaceLayout } from './components/Layout/WorkspaceLayout';
 import './styles/index.css';
@@ -9,9 +10,11 @@ function App() {
   return (
     <BrowserRouter>
         <ToastProvider>
-            <WorkspaceProvider>
-                <WorkspaceLayout />
-            </WorkspaceProvider>
+            <ErrorProvider>
+                <WorkspaceProvider>
+                    <WorkspaceLayout />
+                </WorkspaceProvider>
+            </ErrorProvider>
         </ToastProvider>
     </BrowserRouter>
   );
