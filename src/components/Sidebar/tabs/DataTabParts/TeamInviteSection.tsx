@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mail, Link as LinkIcon } from 'lucide-react';
+import { Mail, Link as LinkIcon, Share2, Loader2 } from 'lucide-react';
 
 interface TeamInviteSectionProps {
     t: (key: string) => string;
@@ -63,13 +63,27 @@ export const TeamInviteSection: React.FC<TeamInviteSectionProps> = ({
                   placeholder={t('data.invite.placeholder')}
                   className="flex-1 text-xs p-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 dark:bg-slate-900 dark:border-slate-600 dark:text-gray-200"
                />
-               <button 
-                  onClick={handleInviteUser}
-                  disabled={isInviting}
-                  className="bg-indigo-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-indigo-700 flex items-center gap-1 disabled:opacity-50"
-               >
-                   <Mail size={12} /> {isInviting ? "..." : t('btn.share')}
-               </button>
+
+                <div className="relative group">
+                   <button 
+                      onClick={handleInviteUser}
+                      disabled={isInviting}
+                      className="bg-indigo-600 text-white p-1.5 aspect-square rounded text-xs font-medium hover:bg-indigo-700 flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      aria-label={t('btn.share')}
+                   >
+                       {isInviting ? (
+                           <Loader2 size={14} className="animate-spin" />
+                       ) : (
+                           <Share2 size={14} />
+                       )}
+                   </button>
+                   
+                   {/* Tooltip */}
+                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-[10px] rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                       {t('btn.share')}
+                       <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-800"></div>
+                   </div>
+               </div>
            </div>
             
             {/* Fallback Legacy Button */}
