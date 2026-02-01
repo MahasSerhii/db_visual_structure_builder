@@ -168,17 +168,23 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
     if (!isConnected && (!connectedUsers || connectedUsers.length === 0)) return null;
 
     return (
-        <div className="mt-3 pt-3 border-t border-indigo-100 dark:border-indigo-900 min-h-[70px]">
+        <div className="mt-3 w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm overflow-hidden transition-all">
             <button 
                 onClick={() => setIsUsersListOpen(!isUsersListOpen)}
-                className="w-full flex justify-between items-center text-[10px] uppercase font-bold text-gray-400 mb-2 hover:text-indigo-600 transition-colors dark:text-gray-500 dark:hover:text-indigo-400"
+                className="w-full flex justify-between items-center p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-xs font-bold text-slate-600 dark:text-slate-300 select-none"
             >
-                <span>{t('data.users.active')} ({displayUsers.length})</span>
-                {isUsersListOpen ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
+                <div className="flex items-center gap-2">
+                    <span>{t('data.users.active')}</span>
+                    <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md text-[10px] font-mono dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 h-5 flex items-center justify-center min-w-[20px]">
+                        {displayUsers.length}
+                    </span>
+                </div>
+                {isUsersListOpen ? <ChevronUp size={14} className="text-slate-400"/> : <ChevronDown size={14} className="text-slate-400"/>}
             </button>
             
             {isUsersListOpen && (
-                <div className="space-y-1.5 animate-slide-in">
+                <div className="p-2 pt-0 space-y-1.5 animate-slide-in bg-slate-50/50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700/50">
+                    <div className="h-1"></div>
                         {displayUsers.length > 0 ? (
                             displayUsers.map(u => {
                                 const accessId = u.accessUser ? u.accessUser.accessId : getAccessIdForUser(u.name);

@@ -61,7 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ tabId }) => {
 
 
     return (
-        <div id="sidebar" className={`bg-white flex flex-col transition-all duration-300 ease-in-out border-r border-gray-200 shadow-xl z-50 shrink-0 relative h-full dark:bg-slate-800 dark:border-slate-700 ${isOpen ? 'w-80' : 'w-0'}`}>
+        <div id="sidebar" className={`bg-white flex flex-col transition-all duration-300 ease-in-out border-r border-gray-200 shadow-xl z-50 shrink-0 relative h-full dark:bg-slate-800 dark:border-slate-700 ${isOpen ? 'w-[360px]' : 'w-0'}`}>
              
              {/* Toggle Button */}
              <button onClick={toggleSidebar} className="absolute -right-5 top-1/2 -translate-y-1/2 bg-white border-y border-r border-gray-200 text-gray-400 hover:text-indigo-600 rounded-r-xl w-5 h-16 shadow-md z-50 flex items-center justify-center outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400 dark:hover:text-indigo-400">

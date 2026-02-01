@@ -97,7 +97,6 @@ export const DataTab: React.FC = () => {
     const [isLeaveRoomConfirmOpen, setIsLeaveRoomConfirmOpen] = useState(false);
     const [userToRemove, setUserToRemove] = useState<{ accessId: string; name: string } | null>(null);
     
-    // connectedUsers removed - using Context
     const [isUsersListOpen, setIsUsersListOpen] = useState(false);
     
     // Auth Components
@@ -271,9 +270,13 @@ export const DataTab: React.FC = () => {
                  // Only auto-connect if we have a specific session record (this specific tab was refreshed)
                  // OR if we are explicitly in "Guest Mode" (URL params)
                  // OR if we are in Tab Mode and have a room ID (Persistence restore)
+                 
+                 // FIXED: We now enforce isRestoringSession check to prevent auto-connection when user is just typing in the input
                  const shouldAutoConnect = isClientMode || (
-                     (!tabId && storedSessionRoom && storedSessionRoom === roomId) || // Standard Single-Tab restore
-                     (tabId && roomId) // Multi-Tab restore (roomId comes from GraphContext/Props)
+                     isRestoringSession && (
+                        (!tabId && storedSessionRoom && storedSessionRoom === roomId) || // Standard Single-Tab restore
+                        (tabId && roomId) // Multi-Tab restore (roomId comes from GraphContext/Props)
+                     )
                  );
 
                  if (shouldAutoConnect) {
@@ -1180,89 +1183,78 @@ export const DataTab: React.FC = () => {
                 </div>
             )}
             
-            <div className="p-4 bg-white rounded-lg border border-indigo-200 shadow-sm space-y-3 dark:bg-indigo-900/10 dark:border-indigo-800">
-                 <div className="text-xs font-bold text-gray-700 flex justify-between items-center dark:text-indigo-200">
-                     <span>{t('data.live')}</span>
-                     <span 
-                         className={`w-2 h-2 rounded-full ${
-                             isConnected || (isLiveMode && connectionStatus === 'connected') 
-                                 ? (isLiveMode 
-                                     ? (connectionStatus === 'failed' ? 'bg-red-500' : 'bg-green-500') 
-                                     : 'bg-orange-400') 
-                                 : 'bg-gray-300'
-                         }`} 
-                         title={isConnected ? (isLiveMode ? (connectionStatus === 'failed' ? "Live Sync Failed" : "Live Sync Active") : "Local Mode (Paused)") : "Disconnected"}
-                     ></span>
-                 </div>
-
-                     <>
-                        <RoomConnectionSection
-                            t={t}
-                            isClientMode={isClientMode}
-                            isConnected={isConnected}
-                            isRestoringSession={isRestoringSession}
-                            isLiveMode={isLiveMode}
-                            roomId={roomId}
-                            setRoomId={setRoomId}
-                            handleDeleteDB={handleDeleteDB}
-                            handleDisconnect={onDisconnectClick}
-                            showLoginUI={showLoginUI}
-                            loginEmail={loginEmail}
-                            setLoginEmail={setLoginEmail}
-                            handleLoginRequest={handleLoginRequest}
-                            isLoggingIn={isLoggingIn}
-                            isConnecting={isConnecting}
-                            connectionStatus={connectionStatus}
-                            handleConnect={handleConnect}
-                            toggleLiveMode={toggleLiveMode}
-                            lastSyncTime={lastSyncTime}
-                            isAuthenticated={!!isAuthenticated}
-                            onOpenAuthModal={() => setAuthModalOpen(true)}
-                            />
+            <div className="space-y-3">
+                 {/* Room Connection Card - Self Contained */}
+                <RoomConnectionSection
+                    t={t}
+                    isClientMode={isClientMode}
+                    isConnected={isConnected}
+                    isRestoringSession={isRestoringSession}
+                    isLiveMode={isLiveMode}
+                    roomId={roomId}
+                    setRoomId={setRoomId}
+                    handleDeleteDB={handleDeleteDB}
+                    handleDisconnect={onDisconnectClick}
+                    showLoginUI={showLoginUI}
+                    loginEmail={loginEmail}
+                    setLoginEmail={setLoginEmail}
+                    handleLoginRequest={handleLoginRequest}
+                    isLoggingIn={isLoggingIn}
+                    isConnecting={isConnecting}
+                    connectionStatus={connectionStatus}
+                    handleConnect={handleConnect}
+                    toggleLiveMode={toggleLiveMode}
+                    lastSyncTime={lastSyncTime}
+                    isAuthenticated={!!isAuthenticated}
+                    onOpenAuthModal={() => setAuthModalOpen(true)}
+                />
                             
-                        {!isClientMode && isConnected && <TeamInviteSection
-                            t={t}
-                            isClientMode={isClientMode}
-                            isConnected={isConnected}
-                            isRestoringSession={isRestoringSession}
-                            linkAllowEdit={linkAllowEdit}
-                            setLinkAllowEdit={setLinkAllowEdit}
-                            inviteEmail={inviteEmail}
-                            setInviteEmail={setInviteEmail}
-                            handleInviteUser={handleInviteUser}
-                            isInviting={isInviting}
-                            handleCopyMagicLink={handleCopyMagicLink}
-                        />}
+                {!isClientMode && isConnected && (
+                    <TeamInviteSection
+                        t={t}
+                        isClientMode={isClientMode}
+                        isConnected={isConnected}
+                        isRestoringSession={isRestoringSession}
+                        linkAllowEdit={linkAllowEdit}
+                        setLinkAllowEdit={setLinkAllowEdit}
+                        inviteEmail={inviteEmail}
+                        setInviteEmail={setInviteEmail}
+                        handleInviteUser={handleInviteUser}
+                        isInviting={isInviting}
+                        handleCopyMagicLink={handleCopyMagicLink}
+                    />
+                )}
                         
+                {isSyncModalOpen && (
+                    <SyncConflictModal
+                        isOpen={isSyncModalOpen}
+                        onClose={() => { setIsSyncModalOpen(false); setPendingRemoteData(null); }}
+                        localData={{ nodes, edges, comments, config }}
+                        remoteData={pendingRemoteData || { nodes: [], edges: [], comments: [] }}
+                        onResolve={resolveSync}
+                    />
+                )}
 
-                        {isSyncModalOpen && <SyncConflictModal
-                            isOpen={isSyncModalOpen}
-                            onClose={() => { setIsSyncModalOpen(false); setPendingRemoteData(null); }}
-                            localData={{ nodes, edges, comments, config }}
-                            remoteData={pendingRemoteData || { nodes: [], edges: [], comments: [] }}
-                            onResolve={resolveSync}
-                        />}
-
-                        <ActiveUsersList
-                            t={t}
-                            isConnected={isConnected}
-                            connectedUsers={activeUsers}
-                            isClientMode={isClientMode}
-                            isUsersListOpen={isUsersListOpen}
-                            setIsUsersListOpen={setIsUsersListOpen}
-                            isLiveMode={isLiveMode}
-                            isInvisible={!isUserVisible}
-                            toggleInvisible={toggleInvisible}
-                            userProfile={userProfile}
-                            currentUserId={currentUserId}
-                            mySocketId={mySocketId}
-                            isProjectAuthor={!isClientMode && isLiveMode}
-                            onRemoveUser={handleRemoveUserFromRoom}
-                            onLeaveRoom={handleLeaveRoom}
-                            roomAccessUsers={roomAccessUsers}
-                        />
-                     </>
-
+                {isConnected && isLiveMode && (
+                    <ActiveUsersList
+                        t={t}
+                        isConnected={isConnected}
+                        connectedUsers={activeUsers}
+                        isClientMode={isClientMode}
+                        isUsersListOpen={isUsersListOpen}
+                        setIsUsersListOpen={setIsUsersListOpen}
+                        isLiveMode={isLiveMode}
+                        isInvisible={!isUserVisible}
+                        toggleInvisible={toggleInvisible}
+                        userProfile={userProfile}
+                        currentUserId={currentUserId}
+                        mySocketId={mySocketId}
+                        isProjectAuthor={!isClientMode && isLiveMode}
+                        onRemoveUser={handleRemoveUserFromRoom}
+                        onLeaveRoom={handleLeaveRoom}
+                        roomAccessUsers={roomAccessUsers}
+                    />
+                )}
             </div>
 
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">{t('data.mgmt')}</h3>

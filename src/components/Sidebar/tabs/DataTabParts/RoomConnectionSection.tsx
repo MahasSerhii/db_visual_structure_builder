@@ -1,7 +1,8 @@
-import React from 'react';
-import { Unplug, Radio, LogIn, Lock, RefreshCw, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Unplug, Radio, LogIn, Lock, RefreshCw, AlertTriangle, Power, Globe, PauseCircle, PlayCircle, Trash2, CheckCircle2, Copy, Wifi, WifiOff } from 'lucide-react';
 import { LoadingKitty } from '../../../UI/LoadingKitty';
-import { ConnectionStatus } from '../../../../context/GraphContext'; 
+import { ConnectionStatus } from '../../../../context/GraphContext';
+import { useToast } from '../../../../context/ToastContext';
 
 interface RoomConnectionSectionProps {
     t: (key: string) => string;
@@ -19,7 +20,7 @@ interface RoomConnectionSectionProps {
     handleLoginRequest: () => void;
     isLoggingIn: boolean;
     isConnecting: boolean;
-    connectionStatus: ConnectionStatus; 
+    connectionStatus: ConnectionStatus;
     handleConnect: (live: boolean) => void;
     toggleLiveMode: (target: boolean) => void;
     lastSyncTime: Date | null;
@@ -29,147 +30,180 @@ interface RoomConnectionSectionProps {
 
 export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
     t, isClientMode, isConnected, isRestoringSession, isLiveMode, roomId, setRoomId,
-    handleDeleteDB, handleDisconnect, showLoginUI, isConnecting, connectionStatus, handleConnect, toggleLiveMode, lastSyncTime,
+    handleDeleteDB, handleDisconnect, isConnecting, connectionStatus, handleConnect, toggleLiveMode, lastSyncTime,
     isAuthenticated, onOpenAuthModal
 }) => {
-    
+    const { showToast } = useToast();
+
     // Status Logic
     const isLiveActive = isLiveMode && connectionStatus === 'connected';
     const isLiveConnecting = isLiveMode && (connectionStatus === 'connecting' || connectionStatus === 'reconnecting' || (isConnecting && connectionStatus !== 'connected'));
     const isLiveFailed = isLiveMode && connectionStatus === 'failed';
 
+    // UI State
+
+    const copyRoomId = () => {
+        navigator.clipboard.writeText(roomId);
+        showToast(t('toast.copied'), 'success');
+    };
+
     if (isRestoringSession && isLiveMode) {
         return (
-            <div id="fb-room-section" className="min-h-[120px] flex flex-col justify-center items-center w-full space-y-2">
+            <div className="py-8 flex flex-col justify-center items-center w-full space-y-4 bg-white/50 dark:bg-slate-800/50 rounded-xl border border-dashed border-indigo-200 dark:border-indigo-800">
                 <LoadingKitty size={40} />
-                <p className="text-gray-400 animate-pulse font-medium text-[10px] uppercase tracking-wider">{t('lbl.restoring')}</p>
+                <p className="text-indigo-400 animate-pulse font-bold text-[10px] uppercase tracking-wider">{t('lbl.restoring')}</p>
             </div>
         );
     }
 
-    return (
-        <div id="fb-room-section" className="min-h-[120px] flex flex-col justify-center items-center w-full">
-            {(isAuthenticated || isConnected) && (
-                <div className="flex justify-between items-end mb-1 w-full">
-                    <label className="block text-[10px] text-gray-500 dark:text-gray-400">
-                        {isConnected ? (isClientMode ? t('data.room.connected') : `Room: ${roomId}`) : t('data.room')}
-                    </label>
-                    <div className="flex gap-2 items-center">
-                        {!isClientMode && isConnected && (
-                            <button 
-                                onClick={handleDeleteDB} 
-                                disabled={isConnecting || isLiveConnecting}
-                                className={`text-[9px] transition mb-0.5 font-bold underline px-1 rounded ${
-                                    (isConnecting || isLiveConnecting)
-                                    ? 'text-gray-300 dark:text-slate-600 bg-gray-50 dark:bg-slate-800 cursor-not-allowed' 
-                                    : 'text-red-800 hover:text-red-900 bg-red-100 dark:bg-red-900/50 dark:text-red-300 dark:hover:text-red-200'
-                                }`}
-                            >
-                                {t('data.deleteDB')}
-                            </button>
-                        )}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); handleDisconnect(); }} 
-                            disabled={isLiveConnecting}
-                            className={`px-2 py-0.5 border rounded text-[10px] font-bold transition shadow-sm active:scale-95 ${
-                                isLiveConnecting 
-                                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-gray-600'
-                                : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-900/40'
-                            }`}
-                        >
-                            {t('data.disconnect')}
-                        </button>
-                    </div>
+    // STATE 1: Not Authenticated
+    if (!isAuthenticated && !isConnected) {
+        return (
+            <div className="w-full bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-5 text-center shadow-sm">
+                <div className="bg-indigo-50 dark:bg-indigo-900/30 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
+                    <Lock size={20} className="text-indigo-600 dark:text-indigo-400" />
                 </div>
-            )}
-            
-            {/* INPUT FIELD - Only show when NOT connected and NOT showing login UI */}
-            {!isConnected && !showLoginUI && isAuthenticated && (
-                <div className="relative w-full">
-                    <input 
-                        value={isClientMode ? (isConnected ? t('data.room.connected') : t('data.room.pending')) : roomId}
-                        onChange={(e) => !isClientMode && setRoomId(e.target.value)}
-                        type={isClientMode ? "password" : "text"} 
-                        placeholder={t('data.room.placeholder')}
-                        className="w-full text-xs p-2 border border-gray-200 rounded mb-2 font-bold text-indigo-700 disabled:bg-indigo-50/50 disabled:text-indigo-400 dark:bg-slate-900 dark:border-slate-600 dark:text-indigo-300 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
-                        disabled={isConnected || isClientMode || isConnecting || isRestoringSession}
-                    />
-                </div>
-            )}
-            
-            <div className="flex gap-2 w-full">
-                {!isConnected ? (
-                    (!isAuthenticated) ? (  // Show login UI if NOT Authenticated
-                        <div className="w-full space-y-2">
-                            <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg text-center dark:bg-indigo-900/20 dark:border-indigo-900/50">
-                                <Lock size={16} className="mx-auto text-indigo-500 mb-1" />
-                                <div className="text-xs font-bold text-indigo-800 dark:text-indigo-200">{t('auth.required')}</div>
-                                <div className="text-[10px] text-indigo-700 mb-2 dark:text-indigo-300">{t('data.room.loginMsg')}</div>
-                                
-                                <button 
-                                    onClick={onOpenAuthModal} 
-                                    className="w-full py-1.5 text-xs bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700 flex items-center justify-center gap-2"
-                                >
-                                    <LogIn size={12}/> {t('auth.signin')}
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <button 
-                            id="btn-connect" 
-                            onClick={() => handleConnect(true)} 
-                            disabled={isConnecting}
-                            className={`flex-1 py-1.5 text-xs text-white rounded font-medium transition shadow-sm ${isConnecting ? 'bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600'}`}
-                        >
-                            {isConnecting ? t('data.room.pending') : t('data.connect')}
-                        </button>
-                    )
-                ) : (
-                    <div className="flex-1 flex gap-2 w-full">
-                        <button 
-                            onClick={() => toggleLiveMode(false)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 text-[10px] font-bold uppercase rounded-md transition-all border ${
-                                !isLiveMode 
-                                ? 'bg-violet-600 text-white border-violet-600 shadow-sm' 
-                                : 'bg-white text-gray-400 border-gray-200 hover:text-gray-600 hover:border-gray-300 dark:bg-slate-800 dark:border-slate-600 dark:text-gray-500 dark:hover:text-gray-300'
-                            }`}
-                        >
-                            <Unplug size={14}/> Local
-                        </button>
-                        <button 
-                            onClick={() => toggleLiveMode(true)}
-                            disabled={isConnecting || (isLiveMode && (connectionStatus === 'connected' || connectionStatus === 'connecting'))}
-                            title={isLiveFailed ? "Connection Failed - Click to Retry" : (isLiveActive ? "Live Sync Active" : "Enable Live Sync")}
-                            className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 text-[10px] font-bold uppercase rounded-md transition-all border ${
-                                isLiveActive 
-                                ? 'bg-green-600 text-white border-green-600 shadow-sm' 
-                                : isLiveFailed 
-                                    ? 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400 cursor-pointer' 
-                                    : isLiveConnecting 
-                                        ? 'bg-yellow-50 text-yellow-600 border-yellow-200 cursor-wait dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-400'
-                                        : 'bg-white text-gray-400 border-gray-200 hover:text-gray-600 hover:border-gray-300 dark:bg-slate-800 dark:border-slate-600 dark:text-gray-500 dark:hover:text-gray-300'
-                            }`}
-                        >
-                             {isLiveConnecting && <RefreshCw size={12} className="animate-spin mr-1"/>}
-                             {!isLiveConnecting && isLiveFailed && <RefreshCw size={12} className="mr-1"/>}
-                             {isLiveFailed ? "Retry" : "Live"}
-                             {!isLiveConnecting && !isLiveFailed && <Radio size={14} className={isLiveActive ? "animate-pulse" : ""}/>}
-                             {isLiveFailed && <AlertTriangle size={12} className="ml-1"/>}
-                        </button>
-                    </div>
-                )}
+                <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mb-2">{t('auth.required')}</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed px-2">
+                    {t('data.room.loginMsg')}
+                </p>
+                <button
+                    onClick={onOpenAuthModal}
+                    className="w-full py-2.5 text-xs bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg font-bold transition-all flex items-center justify-center gap-2 shadow hover:shadow-md"
+                >
+                    <LogIn size={14} strokeWidth={2.5} /> {t('auth.signin')}
+                </button>
             </div>
-            
-            <div className="h-[24px] flex items-end justify-center mb-1">
-                {lastSyncTime && isConnected && isLiveMode ? (
-                    <div className="text-[9px] text-gray-400 text-center animate-in fade-in slide-in-from-top-1">
-                        Last synced: {lastSyncTime.toLocaleTimeString()}
+        );
+    }
+
+    // STATE 2: Connected
+    if (isConnected) {
+        return (
+            <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                {/* Status Card */}
+                <div className={`relative overflow-hidden rounded-xl border-2 transition-all duration-300 ${isLiveActive
+                        ? 'bg-emerald-50/50 border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-900/50'
+                        : isLiveFailed
+                            ? 'bg-red-50/50 border-red-100 dark:bg-red-900/10 dark:border-red-900/50'
+                            : 'bg-slate-50/50 border-slate-100 dark:bg-slate-800/50 dark:border-slate-700'
+                    }`}>
+                    <div className="p-4 relative z-10">
+                        {/* Header */}
+                        <div className="flex justify-between items-center mb-3">
+                            <div className="flex items-center gap-2.5">
+                                <div className={`flex items-center justify-center w-6 h-6 rounded-full shadow-sm ${isLiveActive ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400' :
+                                        isLiveFailed ? 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400' :
+                                            'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                                    }`}>
+                                    {isLiveActive ? <Wifi size={18} strokeWidth={2.5} /> : isLiveFailed ? <AlertTriangle size={18} strokeWidth={2.5} /> : <WifiOff size={18} strokeWidth={2.5} />}
+                                </div>
+                                <div>
+                                    <h5 className={`text-xs font-bold uppercase tracking-wide leading-none ${isLiveActive ? 'text-emerald-700 dark:text-emerald-400' :
+                                            isLiveFailed ? 'text-red-700 dark:text-red-400' :
+                                                'text-slate-600 dark:text-slate-400'
+                                        }`}>
+                                        {isLiveActive ? 'Live Sync' : isLiveFailed ? 'Failed' : 'Local Mode'}
+                                    </h5>
+                                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                        {isLiveActive && lastSyncTime ? `Synced ${lastSyncTime.toLocaleTimeString()}` : 'Changes saved locally'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Live Toggle */}
+                            <button
+                                onClick={() => toggleLiveMode(!isLiveMode)}
+                                className={`p-2 rounded-lg transition-all active:scale-95 ${isLiveMode
+                                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                        : 'bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300'
+                                    }`}
+                                title={isLiveMode ? "Pause Sync" : "Resume Sync"}
+                            >
+                                {isLiveMode ? <PauseCircle size={18} strokeWidth={2.5} /> : <PlayCircle size={18} strokeWidth={2.5} />}
+                            </button>
+                        </div>
+                        <div className='flex gap-2'>
+                            {/* Room Info */}
+                            <div className="flex-1 text-xs px-3 py-2.5 bg-white border border-indigo-100 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all shadow-sm dark:bg-slate-900 dark:text-slate-200 dark:placeholder-slate-500">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                    <code className="text-[10px] font-mono text-slate-600 dark:text-slate-300 truncate" title={roomId}>
+                                        {isClientMode ? "READ-ONLY LINKS" : roomId}
+                                    </code>
+                                </div>
+                            </div>
+                            {/* Primary Actions */}
+                            {/* Disconnect Button */}
+                            <div className="relative group">
+                                <button
+                                    className="bg-white text-indigo-600 border border-indigo-200 w-[38px] h-[38px] rounded-lg text-xs font-medium hover:bg-indigo-50 active:scale-95 flex items-center justify-center transition-all shadow-sm dark:bg-slate-800 dark:border-slate-600 dark:text-indigo-400 dark:hover:bg-slate-700 mr-0"
+                                    aria-label={t('data.disconnect')}
+                                    onClick={handleDisconnect}
+                                >
+                                    <Unplug size={14} />
+                                </button>
+
+                                {/* Tooltip */}
+                                <div className="absolute bottom-full right-0 mb-2 px-2 py-1.5 bg-slate-800 text-white text-[10px] font-medium rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 transform translate-y-1 group-hover:translate-y-0">
+                                    {t('data.disconnect')}
+                                    <div className="absolute top-full right-3 -mt-1 border-4 border-transparent border-t-slate-800"></div>
+                                </div>
+                            </div>
+
+                            {/* Delete room Button (Small) */}
+                            {!isClientMode && (
+                                <div className="relative group">
+                                    <button
+                                        className="bg-white text-red-500 border border-indigo-200 w-[38px] h-[38px] rounded-lg text-xs font-medium hover:bg-red-600 hover:text-white hover:border-red-600 active:scale-95 flex items-center justify-center transition-all shadow-sm dark:bg-slate-800 dark:border-slate-600 dark:text-red-400 dark:hover:bg-red-600 dark:hover:text-white mr-1"
+                                        onClick={handleDeleteDB}
+                                        aria-label={t('data.deleteDB')}
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                    {/* Tooltip */}
+                                    <div className="absolute bottom-full right-0 mb-2 px-2 py-1.5 bg-slate-800 text-white text-[10px] font-medium rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 transform translate-y-1 group-hover:translate-y-0">
+                                        {t('data.deleteDB')}
+                                        <div className="absolute top-full right-3 -mt-1 border-4 border-transparent border-t-slate-800"></div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
+                </div>
+            </div>
+        );
+    }
+
+    // STATE 3: Not Connected (Input)
+    return (
+        <div className="w-full space-y-3">
+            <div className="relative group">
+                <input
+                    type="text"
+                    value={roomId}
+                    onChange={e => setRoomId(e.target.value)}
+                    placeholder={t('data.ph.roomId')}
+                    className="w-full pl-4 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all shadow-sm group-hover:border-indigo-300 dark:group-hover:border-indigo-700 text-slate-800 dark:text-slate-200"
+                />
+            </div>
+
+            <button
+                onClick={() => handleConnect(true)}
+                disabled={isConnecting || !roomId}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white py-3 rounded-xl font-bold shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2 text-sm"
+            >
+                {isConnecting ? (
+                    <RefreshCw className="animate-spin" size={18} />
                 ) : (
-                    <div className="text-[9px] text-transparent select-none">
-                        Reference
-                    </div>
+                    <Globe size={18} />
                 )}
+                {isConnecting ? t('status.connecting') : t('data.btn.connect')}
+            </button>
+
+            <div className="flex items-center justify-center gap-2 pt-1 opacity-60">
+                <div className="h-px bg-slate-300 dark:bg-slate-700 w-1/4"></div>
+                <span className="text-[10px] uppercase text-slate-400 font-bold tracking-widest">OR</span>
+                <div className="h-px bg-slate-300 dark:bg-slate-700 w-1/4"></div>
             </div>
         </div>
     );

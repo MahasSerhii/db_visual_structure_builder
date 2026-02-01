@@ -326,5 +326,7 @@ export const en: Record<string, string> = {
     "history.clearFailed": "Failed to clear history",
     "user.removeConfirm": "Remove User",
     "user.removeMessage": "Are you sure you want to remove this user from the room?",
-    "user.removeTitle": "Remove User"
+    "user.removeTitle": "Remove User",
+    "data.ph.roomId": "Enter Room Name",
+    "data.btn.connect": "Connect / Create"
 };
