@@ -35,7 +35,13 @@ export const WorkspaceLayout: React.FC = () => {
                             `}
                         >
                             {/* Status Dot */}
-                            <div className={`w-2 h-2 shrink-0 rounded-full ${tab.roomId ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                            <div className={`w-2 h-2 shrink-0 rounded-full ${
+                                tab.isLive 
+                                    ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.4)]' // Live: Green Glow
+                                    : tab.roomId 
+                                        ? 'bg-indigo-400 dark:bg-indigo-500' // Local Mode: Indigo
+                                        : 'bg-gray-300 dark:bg-gray-600' // Empty: Grey
+                            }`} />
                             
                             <span className="truncate flex-1">{displayTitle}</span>
                             

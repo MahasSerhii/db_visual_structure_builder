@@ -591,6 +591,35 @@ router.get('/user', authenticate, async (req: Request, res: Response) => {
 
         if (!user) return res.status(404).json({ error: "User not found" });
         
+        // Fetch projects for session restore
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        const ownedProjects = await Project.find({ ownerId: user._id });
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        const accessRecords = await Access.find({ "access_granted.userId": user._id }).populate('projectId');
+        
+        const projects = [
+            ...ownedProjects.map(p => ({
+                id: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
+            })),
+            ...accessRecords.map((record) => {
+                 const a = record as unknown as (IAccess & { projectId: IProject });
+                 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                 // @ts-ignore
+                 // Check valid population
+                 if(!a.projectId || !a.projectId.roomId) return null;
+                 
+                 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                 // @ts-ignore
+                 const u = a.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
+
+                 return {
+                    id: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
+                 };
+            }).filter(p => !!p)
+        ];
+
         const userObj = {
             id: user._id,
             name: user.name,
@@ -605,7 +634,7 @@ router.get('/user', authenticate, async (req: Request, res: Response) => {
             canvasBg: user.canvasBg
         };
 
-        res.json({ user: userObj });
+        res.json({ user: userObj, projects });
     } catch {
         res.status(500).json({ error: "Fetch Failed" });
     }

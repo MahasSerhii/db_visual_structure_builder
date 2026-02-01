@@ -5,6 +5,7 @@ export interface TabData {
     roomId: string | null; // null = New Tab / Local only?
     title: string;
     type: 'graph';
+    isLive?: boolean; 
 }
 
 interface WorkspaceContextType {

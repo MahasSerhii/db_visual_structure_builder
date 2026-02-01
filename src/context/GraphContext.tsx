@@ -131,11 +131,6 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
     // In a multi-tab environment, we must keep the workspace state in sync with the internal graph state.
     const { updateTab } = useWorkspace(); 
 
-    useEffect(() => {
-        if (tabId) {
-            updateTab(tabId, { roomId: currentRoomId });
-        }
-    }, [currentRoomId, tabId, updateTab]);
     // -----------------------------
 
     const [isLiveMode, _setLiveMode] = useState(() => {
@@ -151,6 +146,17 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         // Legacy behavior for single-window apps
         return localStorage.getItem('is_live_mode') === 'true';
     });
+    
+    // Sync RoomID and LiveStatus to Tab Title/Metadata
+    useEffect(() => {
+        if (tabId) {
+            updateTab(tabId, { 
+                roomId: currentRoomId,
+                isLive: isLiveMode
+            });
+        }
+    }, [currentRoomId, isLiveMode, tabId, updateTab]);
+
     const [isTransitioningToLive, setTransitioningToLive] = useState(false);
 
     const setCurrentRoomId = useCallback((id: string | null) => {
@@ -314,6 +320,12 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                         // Cache basic identity
                         localStorage.setItem('my_user_name', u.name);
                         localStorage.setItem('my_user_color', finalColor);
+                    }
+                    
+                    // Restore Projects (Sync if available)
+                    if (response.projects && Array.isArray(response.projects)) {
+                         setSavedProjects(response.projects as SavedProject[]);
+                         localStorage.setItem('saved_projects', JSON.stringify(response.projects));
                     }
                 })
                 .catch(e => console.warn("Background Profile Fetch Failed", e));

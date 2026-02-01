@@ -27,7 +27,8 @@ export const AuthResponseSchema = z.object({
 });
 
 export const UserResponseSchema = z.object({
-    user: AuthUserSchema
+    user: AuthUserSchema,
+    projects: z.array(z.record(z.string(), z.unknown())).optional() 
 });
 
 export const UpdateProfileRequestSchema = z.object({
