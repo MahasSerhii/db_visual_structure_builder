@@ -44,11 +44,11 @@ export const graphApi = {
     },
 
     inviteUser: (data: { email: string, roomId: string, role: string, invitedBy: string }) => {
-        return apiClient.post<ApiResponse>('/invite', data);
+        return apiClient.post<ApiResponse>('/auth/invite', data);
     },
 
     verifyAccess: (data: VerifyAccessRequest) => {
-        return apiClient.post<VerifyAccessResponse>('/verify-access', data);
+        return apiClient.post<VerifyAccessResponse>('/auth/verify-access', data);
     },
 
 

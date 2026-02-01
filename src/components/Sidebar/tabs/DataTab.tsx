@@ -620,7 +620,9 @@ export const DataTab: React.FC = () => {
         if (effectiveToken && roomId) {
             try {
                 // We should ideally await this, but handleConnect is already async.
+                console.log("[DataTab] Verifying access for room:", roomId);
                 const verification = await graphApi.verifyAccess({ token: effectiveToken, roomId });
+                console.log("[DataTab] Verification result:", verification);
                 
                 if (verification.allowed) {
                     role = (verification.role as 'host' | 'guest') || role; // 'host' or 'guest' from DB
@@ -636,6 +638,11 @@ export const DataTab: React.FC = () => {
                     setIsConnecting(false);
                     showToast(verification.error || "You don't have access to this room", "error");
                     return;
+                } else if (!verification.allowed) {
+                    // Invalid token case often lands here if not NO_ACCESS
+                     console.warn("Access Warning: Verification allowed=false");
+                     // We normally don't stop strictly here because of 'Project not found' allowing creation
+                     // BUT if project exists and we are not allowed, we stop.
                 }
             } catch(e) { console.warn("Role verification failed", e); }
         }
@@ -650,6 +657,20 @@ export const DataTab: React.FC = () => {
             if (msg && (msg.includes('403') || msg.includes('NO_ACCESS'))) {
                 setIsConnecting(false);
                 showToast("You don't have access to this room. Please contact the author.", "error");
+                return;
+            }
+            // Check if it's an "Auth Required" error which means our token is bad (401)
+            if (msg && msg.includes('401')) {
+                // Ignore if creating (we might not need to read first?), 
+                // but usually reading a room requires auth.
+                // If we get 401 here, and we *thought* we had a token, then our token is invalid.
+                console.error("Authentication failed during room check");
+                setIsConnecting(false);
+                // Clear invalid token?
+                // localStorage.removeItem('auth_token'); // Risky if flaking network
+                // setAuthToken(null);
+                setShowLoginUI(true);
+                showToast(t('toast.auth.required'), "warning");
                 return;
             }
             

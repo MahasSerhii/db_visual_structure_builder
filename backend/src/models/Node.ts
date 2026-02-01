@@ -18,10 +18,12 @@ export interface INode extends Document {
   x: number;
   y: number;
   docLink?: string;
+  type?: string; // e.g. 'custom'
   props: INodeProperty[];
   isDeleted: boolean;
   deletedAt?: Date;
   createdBy: mongoose.Types.ObjectId;
+  updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,7 +33,9 @@ const NodeSchema: Schema = new Schema({
   nodeId: { type: String, required: true, index: true }, // Not unique globally, but unique per project (composite index below)
   title: { type: String, default: 'Untitled' },
   description: { type: String },
+  type: { type: String },
   color: { type: String, default: '#6366F1' },
+  updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   x: { type: Number, default: 0 },
   y: { type: Number, default: 0 },
   docLink: { type: String },

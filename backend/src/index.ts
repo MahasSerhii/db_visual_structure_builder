@@ -1,31 +1,21 @@
 import express from 'express';
-
 import cors from 'cors';
-
-import dotenv from 'dotenv';
-
 import mongoose from 'mongoose';
-
 import http from 'http';
-
+import { PORT, MONGO_URI, CLIENT_URL } from './config';
 import authRoutes from './routes/auth';
-
 import graphRoutes from './routes/graph';
-
+import * as projectController from './controllers/projectController'; // Import controller
+import { authenticate } from './middleware/authMiddleware'; // Import middleware
 import { initSocket } from './socket';
 
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3001;
-const MONGO_URI = process.env.MONGO_URI || '';
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 app.use(cors({
   origin: CLIENT_URL,
   credentials: true
 }));
-app.use(express.json({ limit: '50mb' })); // Increase API limit for large graphs
+app.use(express.json({ limit: '50mb' })); 
 
 // MongoDB Connection
 mongoose.connect(MONGO_URI)
@@ -48,6 +38,9 @@ initSocket(server, CLIENT_URL);
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/graph', graphRoutes);
+
+// Legacy/Root Routes
+app.post('/api/save-project', authenticate, projectController.saveProject);
 
 app.get('/', (req, res) => {
   res.send('Visual DB Viewer Backend API');

@@ -9,6 +9,8 @@ export interface IEdge extends Document {
   label?: string;
   sourceProp?: string;
   targetProp?: string;
+  animated?: boolean;
+  style?: Record<string, any>;
   isDeleted: boolean;
   deletedAt?: Date;
   createdBy: mongoose.Types.ObjectId;
@@ -24,6 +26,8 @@ const EdgeSchema: Schema = new Schema({
   label: { type: String },
   sourceProp: { type: String },
   targetProp: { type: String },
+  animated: { type: Boolean, default: false },
+  style: { type: Schema.Types.Mixed },
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }

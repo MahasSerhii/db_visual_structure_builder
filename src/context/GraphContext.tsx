@@ -9,7 +9,7 @@ import { graphApi } from '../api/graph';
 import { io, Socket } from 'socket.io-client';
 import { useWorkspace } from './WorkspaceContext'; // Integration with Workspace Tabs
 
-export type ConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'failed'; 
+export type ConnectionStatus = 'connected' | 'connecting' | 'reconnecting' | 'failed' | 'disconnected'; 
 
 interface GraphContextType {
     tabId?: string; // Identity of the tab
@@ -337,7 +337,16 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
                          localStorage.setItem('saved_projects', JSON.stringify(response.projects));
                     }
                 })
-                .catch(e => console.warn("Background Profile Fetch Failed", e));
+                .catch(e => {
+                    console.warn("Background Profile Fetch Failed", e);
+                    const msg = e instanceof Error ? e.message : String(e);
+                    // Critical Fix: If 401, we are not really authenticated.
+                    // This handles the "Invalid Token" loop where UI thinks it's logged in but BE disagrees.
+                    if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('Invalid Token')) {
+                        console.error("Session Invalidated by Backend via 401 on Profile Fetch");
+                        logout(); 
+                    }
+                });
         }
     }, [isAuthenticated]);
     
@@ -857,6 +866,9 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         localStorage.removeItem('auth_provider');
         localStorage.removeItem('session_token'); // Just in case
 
+        // Clear session storage to prevent auto-reconnect on reload
+        sessionStorage.removeItem('room_id_session');
+
         // 2. RESET AUTH STATE ONLY
         setIsAuthenticated(false);
         setUserProfile({ name: 'Guest', color: '#6366F1' });
@@ -866,6 +878,16 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         if (currentRoomId && socketRef.current) {
              socketRef.current.emit('leave-room', currentRoomId);
         }
+        setCurrentRoomId(null);
+        
+        // Clean URL parameters to prevent re-joining on refresh
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('room') || url.searchParams.has('config') || url.searchParams.has('token')) {
+            url.searchParams.delete('room');
+            url.searchParams.delete('config');
+            url.searchParams.delete('token');
+            window.history.replaceState({}, document.title, url.pathname);
+        }
         
         // Mark as disconnected but keep data visible
         setLiveMode(false); 
@@ -874,7 +896,7 @@ export const GraphProvider = ({ children, initialRoomId, tabId }: { children: Re
         
         // Optional: Notify user
         // console.log("Logged out. Switched to Offline mode.");
-    }, [currentRoomId]);
+    }, [currentRoomId, setCurrentRoomId, setLiveMode]);
 
     // Sync Logout across tabs and socket
     useEffect(() => {

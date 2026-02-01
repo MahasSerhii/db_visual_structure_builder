@@ -8,8 +8,13 @@ export interface IComment extends Document {
   x: number;
   y: number;
   color: string;
-  authorId: string; // Storing string ID for visual reference or ObjectId?
-  // Frontend sends 'author' string sometimes. Let's keep it flexible or map it.
+  width?: number;
+  height?: number;
+  linkedNodeId?: string;
+  resolved?: boolean;
+  authorId: string | mongoose.Types.ObjectId; 
+  authorName?: string;
+  timestamp?: Date | number;
   isDeleted: boolean;
   deletedAt?: Date;
   createdAt: Date;
@@ -22,8 +27,14 @@ const CommentSchema: Schema = new Schema({
   text: { type: String, required: true },
   x: { type: Number, default: 0 },
   y: { type: Number, default: 0 },
+  width: { type: Number },
+  height: { type: Number },
+  linkedNodeId: { type: String },
+  resolved: { type: Boolean, default: false },
   color: { type: String },
-  authorId: { type: String }, // Can be 'guest_...' or name
+  authorId: { type: Schema.Types.Mixed }, // String or ObjectId
+  authorName: { type: String },
+  timestamp: { type: Date }, // Optional explicit timestamp
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date }
 }, { timestamps: true });
