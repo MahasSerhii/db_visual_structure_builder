@@ -47,9 +47,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                                 <button 
                                     onClick={() => setShowConfirm(true)}
                                     className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 rounded-full text-xs font-bold hover:bg-red-100 transition-colors border border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/30"
-                                    title="Permanently delete all history"
+                                    title={t('history.clear.tooltip')}
                                 >
-                                    <Trash2 size={12}/> Clear All
+                                    <Trash2 size={12}/> {t('history.clear.btn')}
                                 </button>
                             )}
                         </div>
@@ -104,9 +104,9 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                 isOpen={showConfirm}
                 onClose={() => setShowConfirm(false)}
                 onConfirm={confirmClear}
-                title="Clear History"
-                message="Are you sure you want to permanently delete all history for this project? This action cannot be undone."
-                confirmText="Yes, Clear All"
+                title={t('history.clear.modal.title')}
+                message={t('history.clear.modal.message')}
+                confirmText={t('history.clear.modal.confirm')}
                 isDanger={true}
             />
         </>

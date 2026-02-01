@@ -1,6 +1,7 @@
 import React, { useState, useMemo  } from 'react';
 import { NodeData, EdgeData, AppSettings, Comment } from '../../utils/types';
 import { ChevronRight, ArrowLeftRight, Trash2, Edit2, ChevronDown, Check, ArrowRight, ArrowLeft } from 'lucide-react';
+import { useGraph } from '../../context/GraphContext';
 
 interface SyncConflictModalProps {
     isOpen: boolean;
@@ -25,6 +26,7 @@ const normalizeNode = (n: NodeData) => {
 export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({ 
     isOpen, localData, remoteData, onResolve
 }) => {
+    const { t } = useGraph();
     
     // Diff Calculation
     const { allIds, nodeStatus, conflictIds } = useMemo(() => {
@@ -252,7 +254,7 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
                                                                 onClick={() => resolveNode(id, 'local')}
                                                                 className="text-xs bg-white border border-gray-200 hover:border-indigo-300 px-2 py-1 rounded shadow-sm text-gray-600 hover:text-indigo-600 flex items-center gap-1"
                                                             >
-                                                                Use All <ArrowRight size={12}/>
+                                                                {t('sync.btn.use_all')} <ArrowRight size={12}/>
                                                             </button>
                                                          )}
                                                      </div>
@@ -260,20 +262,20 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
                                                          <NodePropsView node={localNode} />
                                                      ) : (
                                                          <div className="text-center py-8 text-gray-400 italic text-sm border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center gap-3">
-                                                             <span>Deleted Locally (or New on Server)</span>
+                                                             <span>{t('sync.label.deleted_local')}</span>
                                                              
                                                              <div className="flex flex-col gap-2 w-full px-4">
                                                                 <button 
                                                                     onClick={() => resolveNode(id, 'remote')}
                                                                     className="flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-md text-xs font-bold hover:bg-blue-100 transition w-full"
                                                                 >
-                                                                    <ArrowLeft size={14}/> Restore from Remote
+                                                                    <ArrowLeft size={14}/> {t('sync.btn.restore')}
                                                                 </button>
                                                                 <button 
                                                                     onClick={() => resolveNode(id, null)}
                                                                     className="flex items-center justify-center gap-2 px-3 py-1.5 bg-red-50 text-red-600 rounded-md text-xs font-bold hover:bg-red-100 transition w-full"
                                                                 >
-                                                                    <Trash2 size={14}/> Confirm Deletion
+                                                                    <Trash2 size={14}/> {t('sync.btn.confirm_delete')}
                                                                 </button>
                                                              </div>
                                                          </div>
@@ -288,13 +290,13 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
                                                  {/* Remote Column */}
                                                  <div className="p-4 bg-blue-50/30 dark:bg-blue-900/10">
                                                       <div className="flex justify-between items-center mb-4">
-                                                         <h4 className="text-xs font-bold uppercase text-blue-500">Live Version</h4>
+                                                         <h4 className="text-xs font-bold uppercase text-blue-500">{t('sync.title.live')}</h4>
                                                          {remoteNode && (
                                                              <button 
                                                                 onClick={() => resolveNode(id, 'remote')}
                                                                 className="text-xs bg-white border border-blue-200 hover:border-blue-400 px-2 py-1 rounded shadow-sm text-blue-600 flex items-center gap-1"
                                                             >
-                                                                <ArrowLeft size={12}/> Use All
+                                                                <ArrowLeft size={12}/> {t('sync.btn.use_all')}
                                                             </button>
                                                          )}
                                                      </div>
@@ -302,19 +304,19 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
                                                          <NodePropsView node={remoteNode} />
                                                      ) : (
                                                           <div className="text-center py-8 text-gray-400 italic text-sm border-2 border-dashed border-gray-200 rounded-lg flex flex-col items-center gap-3">
-                                                             <span>Missing on Remote</span>
+                                                             <span>{t('sync.label.missing_remote')}</span>
                                                              <div className="flex flex-col gap-2 w-full px-4">
                                                                 <button 
                                                                     onClick={() => resolveNode(id, 'local')}
                                                                     className="flex items-center justify-center gap-2 px-3 py-1.5 bg-green-50 text-green-600 rounded-md text-xs font-bold hover:bg-green-100 transition w-full"
                                                                 >
-                                                                    Push Local to Remote <ArrowRight size={14}/>
+                                                                    {t('sync.btn.push_local')} <ArrowRight size={14}/>
                                                                 </button>
                                                                 <button 
                                                                     onClick={() => resolveNode(id, null)}
                                                                     className="flex items-center justify-center gap-2 px-3 py-1.5 bg-red-50 text-red-600 rounded-md text-xs font-bold hover:bg-red-100 transition w-full"
                                                                 >
-                                                                    <Trash2 size={14}/> Remove from Local
+                                                                    <Trash2 size={14}/> {t('sync.btn.remove_local')}
                                                                 </button>
                                                              </div>
                                                          </div>
@@ -326,14 +328,14 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
                                              {status === 'conflict' && localNode && remoteNode && (
                                                  <div className="p-4 bg-amber-50/50 border-t border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/30">
                                                      <h4 className="text-xs font-bold uppercase text-amber-600 mb-3 flex items-center gap-2">
-                                                         <Edit2 size={12}/> Manual Merge
+                                                         <Edit2 size={12}/> {t('sync.title.manual')}
                                                      </h4>
                                                      
                                                      <div className="grid grid-cols-2 gap-4">
                                                          {/* Title Merge */}
                                                          {localNode.title !== remoteNode.title && (
                                                              <div className="col-span-2 flex items-center gap-4 bg-white p-2 rounded border border-amber-100">
-                                                                 <span className="text-xs font-bold w-16 text-gray-500">Title</span>
+                                                                 <span className="text-xs font-bold w-16 text-gray-500">{t('lbl.title')}</span>
                                                                  <button onClick={() => updateMergedProp(id, 'title', localNode.title)} className={`flex-1 text-left px-3 py-1.5 rounded border text-sm ${mergedNode?.title === localNode.title ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-transparent hover:bg-gray-50'}`}>
                                                                      {localNode.title}
                                                                  </button>
@@ -346,7 +348,7 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
                                                          {/* Color Merge */}
                                                          {localNode.color !== remoteNode.color && (
                                                              <div className="col-span-2 flex items-center gap-4 bg-white p-2 rounded border border-amber-100">
-                                                                 <span className="text-xs font-bold w-16 text-gray-500">Color</span>
+                                                                 <span className="text-xs font-bold w-16 text-gray-500">{t('lbl.color')}</span>
                                                                  <button onClick={() => updateMergedProp(id, 'color', localNode.color)} className={`flex-1 text-left px-3 py-1.5 rounded border text-sm flex items-center gap-2 ${mergedNode?.color === localNode.color ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-transparent hover:bg-gray-50'}`}>
                                                                      <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: localNode.color }}></span> {localNode.color}
                                                                  </button>
@@ -359,12 +361,12 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
                                                           {/* Props Merge (Simple All-Swap for now) */}
                                                           {JSON.stringify(localNode.props) !== JSON.stringify(remoteNode.props) && (
                                                               <div className="col-span-2 flex items-center gap-4 bg-white p-2 rounded border border-amber-100">
-                                                                  <span className="text-xs font-bold w-16 text-gray-500">Props</span>
+                                                                  <span className="text-xs font-bold w-16 text-gray-500">{t('lbl.props')}</span>
                                                                   <button onClick={() => updateMergedProp(id, 'props', localNode.props)} className={`flex-1 text-left px-3 py-1.5 rounded border text-sm ${JSON.stringify(mergedNode?.props) === JSON.stringify(localNode.props) ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-transparent hover:bg-gray-50'}`}>
-                                                                      Keep Local Props ({localNode.props?.length || 0})
+                                                                      {t('sync.merge.keep_local')} ({localNode.props?.length || 0})
                                                                   </button>
                                                                   <button onClick={() => updateMergedProp(id, 'props', remoteNode.props)} className={`flex-1 text-left px-3 py-1.5 rounded border text-sm ${JSON.stringify(mergedNode?.props) === JSON.stringify(remoteNode.props) ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-transparent hover:bg-gray-50'}`}>
-                                                                      Use Remote Props ({remoteNode.props?.length || 0})
+                                                                      {t('sync.merge.use_remote')} ({remoteNode.props?.length || 0})
                                                                   </button>
                                                               </div>
                                                           )}
@@ -383,31 +385,33 @@ export const SyncConflictModal: React.FC<SyncConflictModalProps> = ({
     );
 };
 
-const NodePropsView = ({ node }: { node: NodeData }) => (
+const NodePropsView = ({ node }: { node: NodeData }) => {
+    const { t } = useGraph();
+    return (
     <div className="space-y-3 pointer-events-none opacity-90">
         <div>
-            <div className="text-[10px] font-bold uppercase text-gray-400">Coordinates</div>
+            <div className="text-[10px] font-bold uppercase text-gray-400">{t('lbl.coords')}</div>
             <div className="font-mono text-xs text-gray-500">X: {Math.round(node.x)}, Y: {Math.round(node.y)}</div>
         </div>
         <div>
-            <div className="text-[10px] font-bold uppercase text-gray-400">Title</div>
+            <div className="text-[10px] font-bold uppercase text-gray-400">{t('edit.lbl.title')}</div>
             <div className="font-bold text-gray-800 text-sm">{node.title || <span className='text-gray-300 italic'>Untitled</span>}</div>
         </div>
         {node.description && (
              <div>
-                <div className="text-[10px] font-bold uppercase text-gray-400">Description</div>
+                <div className="text-[10px] font-bold uppercase text-gray-400">{t('lbl.description')}</div>
                 <div className="text-xs text-gray-600 truncate">{node.description}</div>
             </div>
         )}
         <div>
-            <div className="text-[10px] font-bold uppercase text-gray-400">Color</div>
+            <div className="text-[10px] font-bold uppercase text-gray-400">{t('edit.lbl.color')}</div>
             <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: node.color }}></div>
                 <span className="text-xs font-mono text-gray-600">{node.color}</span>
             </div>
         </div>
         <div>
-            <div className="text-[10px] font-bold uppercase text-gray-400 mb-1">Properties</div>
+            <div className="text-[10px] font-bold uppercase text-gray-400 mb-1">{t('edit.props')}</div>
             <div className="space-y-1 max-h-32 overflow-y-auto">
                 {(node.props || []).map((p, i) => (
                    <div key={i} className="text-xs flex gap-2 border-b border-gray-50 pb-1">
@@ -415,8 +419,9 @@ const NodePropsView = ({ node }: { node: NodeData }) => (
                        <span className="font-mono text-gray-500 truncate">{p.type}</span>
                    </div> 
                 ))}
-                {(!node.props || node.props.length === 0) && <span className="text-xs text-gray-400 italic">No properties</span>}
+                {(!node.props || node.props.length === 0) && <span className="text-xs text-gray-400 italic">{t('create.noProps')}</span>}
             </div>
         </div>
     </div>
-);
+    );
+};

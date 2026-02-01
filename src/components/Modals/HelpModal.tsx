@@ -31,8 +31,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                                 <Bot size={24} />
                             </div>
                             <div>
-                                <h3 className="font-bold text-indigo-900 text-lg">AI Assistant</h3>
-                                <p className="text-xs text-indigo-600">Ask me anything about this tool! (No API key required)</p>
+                                <h3 className="font-bold text-indigo-900 text-lg">{t('help.ai.title')}</h3>
+                                <p className="text-xs text-indigo-600">{t('help.ai.desc')}</p>
                             </div>
                         </div>
                         {/* Embedding the Chatbot Component */}
@@ -42,14 +42,14 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                     </div>
 
                     <div className="border-t border-gray-200 my-4"></div>
-                    <h3 className="font-bold text-gray-700 mb-2 px-1">Detailed Documentation</h3>
+                    <h3 className="font-bold text-gray-700 mb-2 px-1">{t('help.doc.title')}</h3>
 
                     {/* Accordion Item 1 */}
                     <details className="group bg-white border border-gray-200 rounded-lg open:shadow-md transition-shadow">
                         <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4 hover:bg-gray-50 text-indigo-700 gap-3">
                             <div className="flex items-center gap-2">
                                  <Plus className="text-indigo-500" size={20} />
-                                 <span>How to Create a Graph</span>
+                                 <span>{t('help.create.title')}</span>
                             </div>
                             <span className="transition group-open:rotate-180">
                                 <ChevronDown size={20} />
@@ -57,9 +57,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                         </summary>
                         <div className="text-gray-600 text-sm p-4 border-t border-gray-100 bg-gray-50">
                             <ol className="list-decimal list-inside space-y-2">
-                                <li><strong>Create Components:</strong> Use the sidebar form to add boxes.</li>
-                                <li><strong>Add Properties:</strong> Components can have "properties".</li>
-                                <li><strong>Connect:</strong> Drag property dots on the graph to connect them visually or use the connection tab.</li>
+                                <li><strong>{t('help.create.step1.title')}:</strong> {t('help.create.step1.desc')}</li>
+                                <li><strong>{t('help.create.step2.title')}:</strong> {t('help.create.step2.desc')}</li>
+                                <li><strong>{t('help.create.step3.title')}:</strong> {t('help.create.step3.desc')}</li>
                             </ol>
                         </div>
                     </details>
@@ -69,14 +69,14 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                         <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4 hover:bg-gray-50 text-indigo-700 gap-3">
                              <div className="flex items-center gap-2">
                                 <FileSpreadsheet className="text-indigo-500" size={20} />
-                                <span>How to Export/Edit in Excel</span>
+                                <span>{t('help.excel.title')}</span>
                             </div>
                             <span className="transition group-open:rotate-180">
                                 <ChevronDown size={20} />
                             </span>
                         </summary>
                         <div className="text-gray-600 text-sm p-4 border-t border-gray-100 bg-gray-50">
-                            <p className="mb-2">Manage data in bulk with CSV export in the Data tab.</p>
+                            <p className="mb-2">{t('help.excel.desc')}</p>
                         </div>
                     </details>
 
@@ -85,7 +85,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                         <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4 hover:bg-gray-50 text-indigo-700 gap-3">
                             <div className="flex items-center gap-2">
                                  <Download className="text-indigo-500" size={20} />
-                                 <span>How to Import CSV Data</span>
+                                 <span>{t('help.import.title')}</span>
                             </div>
                             <span className="transition group-open:rotate-180">
                                 <ChevronDown size={20} />
@@ -93,9 +93,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                         </summary>
                         <div className="text-gray-600 text-sm p-4 border-t border-gray-100 bg-gray-50">
                             <ol className="list-decimal list-inside space-y-2">
-                                <li>Click "Import / Export" in the Data tab.</li>
-                                <li>Select your file.</li>
-                                <li>Ensure columns match the database schema.</li>
+                                <li>{t('help.import.step1')}</li>
+                                <li>{t('help.import.step2')}</li>
+                                <li>{t('help.import.step3')}</li>
                             </ol>
                         </div>
                     </details>

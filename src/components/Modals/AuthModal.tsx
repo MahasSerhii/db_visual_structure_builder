@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, LogIn, Eye, EyeOff } from 'lucide-react';
 import { SavedProject, UserProfile } from '../../utils/types';
+import { useGraph } from '../../context/GraphContext';
 // Firebase imports removed
 
 
@@ -19,6 +20,7 @@ interface AuthModalProps {
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api') + '/auth';
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialState, initialEmail, onSuccess, inviteToken, resetToken }) => {
+    const { t } = useGraph();
     // Determine effective initial email
     // Prioritize props, but if we have resetToken, we need to extract email or let server validation handle it.
     // Actually, we can decode the resetToken on the client to prefill the email if it's JWT.
@@ -85,10 +87,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
         try {
             if (mode === 'REGISTER') {
                 if (password !== repeatPassword) {
-                    throw new Error("Passwords do not match");
+                    throw new Error(t('auth.error.mismatch'));
                 }
                 if (password.length < 6) {
-                    throw new Error("Password must be at least 6 characters");
+                    throw new Error(t('auth.error.min_length'));
                 }
                 
                 const res = await fetch(`${API_URL}/register`, {
@@ -98,10 +100,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                 });
                 
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Registration failed');
+                if (!res.ok) throw new Error(data.error || t('auth.error.register_failed'));
                 
                 if (data.success && !data.token) {
-                    setSuccessMsg(data.message || "Check your email for instructions.");
+                    setSuccessMsg(data.message || t('auth.success.register'));
                     return;
                 }
 
@@ -114,7 +116,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                 });
 
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Login failed');
+                if (!res.ok) throw new Error(data.error || t('auth.error.login_failed'));
                 
                 onSuccess(data.token, data.user.email, data.user.name, data.projects, data.user);
             } else if (mode === 'FORGOT_PASSWORD') {
@@ -124,10 +126,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                     body: JSON.stringify({ email, origin: window.location.origin + window.location.pathname })
                 });
                 const data = await res.json();
-                 if (!res.ok) throw new Error(data.error || 'Request failed');
-                 setSuccessMsg("If this email exists, a reset link has been sent.");
+                 if (!res.ok) throw new Error(data.error || t('auth.error.request_failed'));
+                 setSuccessMsg(t('auth.success.request'));
             } else if (mode === 'RESET_PASSWORD') {
-                if (password !== repeatPassword) throw new Error("Passwords do not match");
+                if (password !== repeatPassword) throw new Error(t('auth.error.mismatch'));
                 
                 const res = await fetch(`${API_URL}/reset-password`, {
                     method: 'POST',
@@ -135,9 +137,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                     body: JSON.stringify({ token: resetToken, newPassword: password })
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Reset failed');
+                if (!res.ok) throw new Error(data.error || t('auth.error.reset_failed'));
                 
-                setSuccessMsg("Password reset! You can now login.");
+                setSuccessMsg(t('auth.success.reset'));
                 
                 // Auto-fill email for next step if available (it should be)
                 // But wait, resetToken has the email, so 'email' state is technically already set/available?
@@ -172,10 +174,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
 
     const getTitle = () => {
         switch(mode) {
-            case 'REGISTER': return inviteToken ? 'Set Password' : 'Create Account';
-            case 'LOGIN': return 'Login';
-            case 'FORGOT_PASSWORD': return 'Reset Password';
-            case 'RESET_PASSWORD': return 'New Password';
+            case 'REGISTER': return inviteToken ? t('auth.title.set_password') : t('auth.title.register');
+            case 'LOGIN': return t('auth.title.login');
+            case 'FORGOT_PASSWORD': return t('auth.title.reset');
+            case 'RESET_PASSWORD': return t('auth.title.new_password');
         }
     };
 
@@ -206,7 +208,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                     <form onSubmit={handleSubmit} className="space-y-4">
                         {mode !== 'RESET_PASSWORD' && (
                         <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">{t('auth.label.email')}</label>
                             <input 
                                 type="email" 
                                 value={email}
@@ -222,7 +224,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                                    {mode === 'RESET_PASSWORD' ? "New Password" : "Password"}
+                                    {mode === 'RESET_PASSWORD' ? t('auth.label.new_password') : t('auth.label.password')}
                                 </label>
                                 <div className="relative">
                                     <input 
@@ -245,7 +247,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
 
                             {(mode === 'REGISTER' || mode === 'RESET_PASSWORD') && (
                             <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Repeat Password</label>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">{t('auth.label.repeat_password')}</label>
                                 <div className="relative">
                                     <input 
                                         type={showRepeatPassword ? "text" : "password"}
@@ -276,7 +278,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                                             onChange={e => setRememberMe(e.target.checked)}
                                             className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                         />
-                                        Remember me
+                                        {t('auth.label.remember_me')}
                                     </label>
                                 </div>
                             )}
@@ -288,10 +290,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                             disabled={isLoading}
                             className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 transition shadow-md disabled:opacity-70"
                         >
-                            {isLoading ? 'Processing...' : (
-                                mode === 'REGISTER' ? 'Create Account' : 
-                                mode === 'LOGIN' ? 'Sign In' : 
-                                mode === 'FORGOT_PASSWORD' ? 'Send Reset Link' : 'Save Password'
+                            {isLoading ? t('auth.btn.processing') : (
+                                mode === 'REGISTER' ? t('auth.btn.create') : 
+                                mode === 'LOGIN' ? t('auth.btn.signin') : 
+                                mode === 'FORGOT_PASSWORD' ? t('auth.btn.send_reset') : t('auth.btn.save_password')
                             )}
                         </button>
                     </form>
@@ -301,22 +303,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                         {mode === 'LOGIN' && (
                             <>
                                 <button onClick={() => setMode('FORGOT_PASSWORD')} className="text-xs text-indigo-500 hover:text-indigo-700 underline">
-                                    Forgot password?
+                                    {t('auth.link.forgot')}
                                 </button>
                                 <div className="text-gray-500 text-xs mt-2">
-                                    Don't have an account? <button type="button" onClick={() => setMode('REGISTER')} className="text-indigo-600 font-bold hover:underline">Register</button>
+                                    {t('auth.link.no_account')} <button type="button" onClick={() => setMode('REGISTER')} className="text-indigo-600 font-bold hover:underline">{t('auth.link.register')}</button>
                                 </div>
                             </>
                         )}
                         {mode === 'REGISTER' && (
                              <div className="text-gray-500 text-xs mt-2">
-                                Already have an account? <button type="button" onClick={() => setMode('LOGIN')} className="text-indigo-600 font-bold hover:underline">Sign In</button>
+                                {t('auth.link.has_account')} <button type="button" onClick={() => setMode('LOGIN')} className="text-indigo-600 font-bold hover:underline">{t('auth.link.signin')}</button>
                             </div>
                         )}
                         {mode === 'FORGOT_PASSWORD' && (
                              <div className="text-center mt-3">
                                 <button type="button" onClick={() => setMode('LOGIN')} className="text-xs text-indigo-500 hover:text-indigo-700 underline">
-                                    Back to Login
+                                    {t('auth.link.back')}
                                 </button>
                             </div>
                         )}
@@ -325,7 +327,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                     {/* Config Input Overlay for Social Login Bootstrapping */}
                 </div>
                 <div className="p-4 bg-gray-50 text-center text-xs text-gray-500 mt-6 border-t border-gray-100">
-                     Visual DB Viewer Secure Access
+                     {t('auth.footer')}
                 </div>
             </div>
         </div>

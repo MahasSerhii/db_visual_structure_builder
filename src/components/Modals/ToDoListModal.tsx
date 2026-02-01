@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useGraph } from '../../context/GraphContext';
 import { X, Plus, Trash2, CheckSquare, Square, Check, ChevronRight, ChevronDown } from 'lucide-react';
 
 interface SubTask {
@@ -68,6 +69,7 @@ const DEFAULT_GOALS: Category[] = [
 ];
 
 export const ToDoListModal: React.FC<ToDoListModalProps> = ({ isOpen, onClose }) => {
+    const { t } = useGraph();
     const [categories, setCategories] = useState<Category[]>(() => {
         const saved = localStorage.getItem('todo_list');
         if (saved) {
@@ -78,13 +80,13 @@ export const ToDoListModal: React.FC<ToDoListModalProps> = ({ isOpen, onClose })
                         // Migrate V1 -> V2
                     const legacyCategory: Category = {
                         id: 'legacy-' + Date.now(),
-                        title: 'Legacy Tasks',
+                        title: t('todo.legacy'),
                         completed: false,
                         expanded: true,
-                        subTasks: parsed.map((t: { id: string; text: string; completed: boolean }) => ({
-                            id: t.id,
-                            text: t.text,
-                            completed: t.completed
+                        subTasks: parsed.map((task: { id: string; text: string; completed: boolean }) => ({
+                            id: task.id,
+                            text: task.text,
+                            completed: task.completed
                         }))
                     };
                     // Initialize with defaults AND legacy items
@@ -192,7 +194,7 @@ export const ToDoListModal: React.FC<ToDoListModalProps> = ({ isOpen, onClose })
 
     const deleteCategory = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if(confirm('Delete this entire category?')) {
+        if(confirm(t('todo.confirmDelete'))) {
             saveCategories(categories.filter(c => c.id !== id));
         }
     };
@@ -219,7 +221,7 @@ export const ToDoListModal: React.FC<ToDoListModalProps> = ({ isOpen, onClose })
                 <div className="p-4 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50">
                     <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                         <CheckSquare size={20} />
-                        <h2 className="font-bold text-lg">My To-Do List</h2>
+                        <h2 className="font-bold text-lg">{t('todo.title')}</h2>
                     </div>
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-400 transition">
                         <X size={20} />
@@ -230,8 +232,8 @@ export const ToDoListModal: React.FC<ToDoListModalProps> = ({ isOpen, onClose })
                 <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3">
                     {categories.length === 0 ? (
                         <div className="text-center py-8 text-gray-400 dark:text-gray-500">
-                            <p className="text-sm">No goals set.</p>
-                            <p className="text-xs mt-1">Add a main goal to get started!</p>
+                            <p className="text-sm">{t('todo.empty')}</p>
+                            <p className="text-xs mt-1">{t('todo.emptyDesc')}</p>
                         </div>
                     ) : (
                         categories.map(cat => (
@@ -295,7 +297,7 @@ export const ToDoListModal: React.FC<ToDoListModalProps> = ({ isOpen, onClose })
                                                 value={subTaskInputs[cat.id] || ''}
                                                 onChange={(e) => setSubTaskInputs({ ...subTaskInputs, [cat.id]: e.target.value })}
                                                 onKeyDown={(e) => e.key === 'Enter' && handleAddSubTask(cat.id)}
-                                                placeholder="Add sub-task..."
+                                                placeholder={t('todo.addSub')}
                                                 className="flex-grow w-full bg-transparent border-b border-gray-200 dark:border-slate-600 text-xs py-1 px-1 outline-none focus:border-indigo-400 dark:text-gray-300 placeholder:text-gray-400"
                                             />
                                             <button 
@@ -321,7 +323,7 @@ export const ToDoListModal: React.FC<ToDoListModalProps> = ({ isOpen, onClose })
                             value={newCategoryTitle}
                             onChange={(e) => setNewCategoryTitle(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                            placeholder="Add new main goal..."
+                            placeholder={t('todo.addMain')}
                             className="flex-grow px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:bg-slate-900 dark:border-slate-600 dark:text-white"
                         />
                         <button

@@ -47,7 +47,7 @@ export const EditNodeModal: React.FC<EditNodeModalProps> = ({ node, isOpen, onCl
         const newNode: NodeData = {
             ...node,
             id: crypto.randomUUID(),
-            title: `${node.title} (Copy)`,
+            title: `${node.title}${t('suffix.copy')}`,
             x: node.x + 50,
             y: node.y + 50,
             locked: false // Don't copy lock state

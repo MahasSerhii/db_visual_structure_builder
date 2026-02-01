@@ -87,14 +87,14 @@ export const CreateTab: React.FC = () => {
              try {
                 data = JSON.parse(jsonInput);
              } catch {
-                 showToast('JSON Parse Error', 'error');
+                 showToast(t('toast.json.error'), 'error');
                  return;
              }
         }
 
         try {
             if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-                showToast('Invalid JSON object', 'error');
+                showToast(t('toast.json.invalid'), 'error');
                 return;
             }
 
@@ -103,9 +103,9 @@ export const CreateTab: React.FC = () => {
             setProps(prev => [...prev, ...newProps]);
             setJsonInput('');
             setShowJsonImport(false);
-            showToast(`Imported ${newProps.length} properties via ${mode}`, 'success');
+            showToast(t('toast.json.imported'), 'success');
         } catch {
-            showToast('Processing Error', 'error');
+            showToast(t('toast.process.error'), 'error');
         }
     };
 

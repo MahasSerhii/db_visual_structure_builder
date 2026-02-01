@@ -24,7 +24,7 @@ export const ConnectTab: React.FC = () => {
         // Duplicate Check
         const existingTab = tabs.find(t => t.roomId === project.id);
         if (existingTab && existingTab.roomId !== currentRoomId) {
-             showToast(`Project "${project.name}" is already open in another tab. Switching...`, 'info');
+             showToast(t('toast.project.open'), 'info');
              setActiveTabId(existingTab.id);
              return;
         }

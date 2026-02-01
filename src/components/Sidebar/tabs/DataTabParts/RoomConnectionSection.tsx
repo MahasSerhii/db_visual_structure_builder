@@ -42,7 +42,7 @@ export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
         return (
             <div id="fb-room-section" className="min-h-[120px] flex flex-col justify-center items-center w-full space-y-2">
                 <LoadingKitty size={40} />
-                <p className="text-gray-400 animate-pulse font-medium text-[10px] uppercase tracking-wider">Restoring...</p>
+                <p className="text-gray-400 animate-pulse font-medium text-[10px] uppercase tracking-wider">{t('lbl.restoring')}</p>
             </div>
         );
     }

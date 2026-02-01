@@ -59,15 +59,15 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                 case UserRoleType.HOST:
                 case UserRoleType.OWNER:
                 case UserRoleType.ADMIN:
-                    roleBadge = '(Host)';
+                    roleBadge = t('role.host');
                     break;
                 case UserRoleType.EDITOR:
                 case UserRoleType.RW:
-                    roleBadge = '(Editor)';
+                    roleBadge = t('role.editor');
                     break;
                 case UserRoleType.VIEWER:
                 case UserRoleType.R:
-                    roleBadge = '(Viewer)';
+                    roleBadge = t('role.viewer');
                     break;
                 default:
                     // If no direct role from socket (or it's 'guest'), check fallbacks
@@ -86,13 +86,13 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                      switch (fallbackRole) {
                         case 'host':
                         case 'admin':
-                             roleBadge = '(Host)';
+                             roleBadge = t('role.host');
                              break;
                         case 'editor':
-                             roleBadge = '(Editor)';
+                             roleBadge = t('role.editor');
                              break;
                         case 'viewer':
-                             roleBadge = '(Viewer)';
+                             roleBadge = t('role.viewer');
                              break;
                      }
                 }

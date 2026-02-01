@@ -175,7 +175,7 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
 
         // Live Mode Warning
         if (isLiveMode) {
-            if (!confirm("⚠️ CAUTION: You are importing data in LIVE Mode.\n\nThis will OVERWRITE the remote database.\n\nContinue?")) {
+            if (!confirm(t('csv.confirm.liveOverwrite'))) {
                 return;
             }
         } else {

@@ -157,7 +157,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                                     checked={relationType === '1:1'} 
                                     onChange={() => handleRelationChange('1:1')} 
                                 />
-                                One to One (1:1)
+                                {t('edit.edge.rel.1to1')}
                             </label>
                             <label className={`flex-1 p-2.5 border rounded-lg cursor-pointer text-center text-xs transition font-medium ${relationType === '1:n' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}>
                                 <input 
@@ -167,7 +167,7 @@ export const EditEdgeModal: React.FC<EditEdgeModalProps> = ({ isOpen, onClose, e
                                     checked={relationType === '1:n'} 
                                     onChange={() => handleRelationChange('1:n')} 
                                 />
-                                One to Many (1:N)
+                                {t('edit.edge.rel.1toN')}
                             </label>
                          </div>
                     </div>

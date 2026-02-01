@@ -13,10 +13,21 @@ interface Message {
 }
 
 export const Chatbot: React.FC = () => {
-    const { nodes, addNode, updateNode } = useGraph();
-    const [messages, setMessages] = useState<Message[]>([
-        { id: '1', text: "Hello! I'm your offline assistant. Ask me to create tables (e.g. 'create table users') or add properties (e.g. 'add email string').", sender: 'bot', timestamp: new Date() }
-    ]);
+    const { nodes, addNode, updateNode, t } = useGraph();
+    const [messages, setMessages] = useState<Message[]>([]);
+
+    useEffect(() => {
+        if (messages.length === 0) {
+            setMessages([
+                { id: '1', text: t('ai.welcome'), sender: 'bot', timestamp: new Date() }
+            ]);
+        }
+    }, [t]); 
+    // Note: Dependent on t. If lang changes, this effect won't run if messages.length > 0.
+    // This is acceptable behavior for chat history (history doesn't translate usually),
+    // but ensures new sessions start with correct language.
+    // To fix the immediate "user sees wrong lang", I'll set initial state empty and let effect fill it.
+
     const [inputValue, setInputValue] = useState('');
     const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -140,9 +151,9 @@ export const Chatbot: React.FC = () => {
         <div className="flex flex-col h-full bg-white">
             <div className="p-4 bg-indigo-50 border-b border-indigo-100 mb-2">
                  <h3 className="font-bold text-indigo-900 flex items-center gap-2">
-                     <Bot size={20} /> AI Assistant
+                     <Bot size={20} /> {t('ai.title')}
                  </h3>
-                 <p className="text-xs text-indigo-600 mt-1">Ask me to create tables or define fields.</p>
+                 <p className="text-xs text-indigo-600 mt-1">{t('ai.desc')}</p>
             </div>
 
             <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50 min-h-0">
@@ -168,7 +179,7 @@ export const Chatbot: React.FC = () => {
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                        placeholder="Type 'create table products'..."
+                        placeholder={t('ai.placeholder')}
                         className="w-full pl-4 pr-10 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
                     />
                     <button 

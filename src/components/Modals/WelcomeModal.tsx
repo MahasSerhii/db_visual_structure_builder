@@ -41,7 +41,7 @@ export const WelcomeModal: React.FC<WelcomeModalProps> = ({ isOpen, onClose }) =
                     <h2 className="text-2xl font-bold text-gray-800">{t('welcome.title')}</h2>
                     <p className="text-gray-600 mt-2">{t('welcome.desc')}</p>
                     <p className="text-xs text-gray-400 mt-2 italic px-4">
-                       If you already have an account, your existing name will be used after login. You can skip this step.
+                       {t('welcome.login_hint')}
                     </p>
                 </div>
                 

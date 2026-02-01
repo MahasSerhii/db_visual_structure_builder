@@ -208,7 +208,7 @@ export const DataTab: React.FC = () => {
                             try {
                                 const payload = JSON.parse(atob(token.split('.')[1]));
                                 if (payload.email === data.email) {
-                                    showToast("Invitation Accepted (Logged In)", "success");
+                                    showToast(t('toast.invited'), "success");
                                     // Verify Role since we are accepting invitation 
                                     // (Actual verification happens in handleConnect, but we can preset mode here if we want)
                                     // But handleConnect will run after this returns.
@@ -223,10 +223,10 @@ export const DataTab: React.FC = () => {
                         setAuthModalState(data.isRegistered ? 'LOGIN' : 'REGISTER');
                         setAuthModalOpen(true); 
                     } else {
-                        showToast(data.error || "Invalid Invite Link", "error");
+                        showToast(data.error || t('toast.invite.invalid'), "error");
                     }
                 })
-                .catch(() => showToast("Failed to validate invite", "error"));
+                .catch(() => showToast(t('toast.invite.failed'), "error"));
             return; // Stop processing other params if processing invite
         }
 
@@ -307,9 +307,9 @@ export const DataTab: React.FC = () => {
         if (isConnected) {
              if (!hasShownErrorToast.current) {
                  if (isLiveMode) {
-                     showToast("Connected to Live Room!", 'success');
+                     showToast(t('toast.connected'), 'success');
                  } else {
-                     showToast("Restored Session (Local Mode)", 'info');
+                     showToast(t('toast.session.restored'), 'info');
                  }
                  hasShownErrorToast.current = true;
              }
@@ -319,8 +319,8 @@ export const DataTab: React.FC = () => {
     const toggleInvisible = () => {
         toggleUserVisibility();
         // Feedback
-        if (!isUserVisible) showToast("You are now visible", "success");
-        else showToast("You are now invisible", "info");
+        if (!isUserVisible) showToast(t('toast.visible'), "success");
+        else showToast(t('toast.invisible'), "info");
     };
 
     const handleInviteUser = async () => {
@@ -441,7 +441,7 @@ export const DataTab: React.FC = () => {
         const targetConnectRoomId = roomIdOverride || roomId;
 
         if (!targetConnectRoomId) {
-            showToast("Room ID is missing", "error");
+            showToast(t('toast.room.missing'), "error");
             setIsRestoringSession(false);
             return;
         }
@@ -449,7 +449,7 @@ export const DataTab: React.FC = () => {
         // 1. AUTH CHECK
         const currentToken = tokenOverride || authToken || localStorage.getItem('auth_token');
         if (!currentToken && forceLiveMode) {
-             showToast("Authentication Required for Live Sync", "warning");
+             showToast(t('toast.auth.required'), "warning");
              setShowLoginUI(true);
              setIsConnecting(false);
              setIsRestoringSession(false);
@@ -462,7 +462,7 @@ export const DataTab: React.FC = () => {
         // This prevents double-connection logic or ghost toasts.
         // BUT if we are restoring a session, we want to verify the connection.
         if (isConnected && !isRestoringSession) {
-            console.log("Already connected. Updating mode only.");
+            console.log(t('toast.already.connected'));
             if (forceLiveMode !== isLiveMode) {
                 toggleLiveMode(forceLiveMode);
             }
@@ -475,7 +475,7 @@ export const DataTab: React.FC = () => {
         // FAST RESTORE FOR LOCAL MODE
         // If we are restoring a session and target mode is LOCAL, we skip network checks
         if (!isLive && isRestoringSession) {
-             console.log("Restoring Local Session (Fast Path)");
+             console.log(t('toast.restoring'));
              setCurrentRoomId(roomId); 
              setLiveMode(false);
              setIsConnected(true);
@@ -574,10 +574,10 @@ export const DataTab: React.FC = () => {
                             canvasBg: config.canvasBg
                         }
                     });
-                    showToast("New Project Room Created!", "success");
+                    showToast(t('toast.room.created'), "success");
                 } catch {
                     setIsConnecting(false);
-                    showToast("Failed to initialize room", "error");
+                    showToast(t('toast.room.failed'), "error");
                     return;
                 }
             } else {
@@ -1387,13 +1387,10 @@ export const DataTab: React.FC = () => {
                     handleDisconnect();
                 }}
                 onConfirm={() => resolveSessionConflict(true)}
-                title="Concurrent Session Detected"
-                message="Only one active connection is allowed per user for this room. 
-If you continue, the session in your other tab will be disconnected.
-
-Do you want to force this connection?"
-                confirmText="Connect Here (Disconnect Other)"
-                cancelText="Cancel"
+                title={t('modal.conflict.title')}
+                message={t('modal.conflict.msg')}
+                confirmText={t('modal.conflict.confirm')}
+                cancelText={t('cancel')}
                 isDanger={false}
             />
 
@@ -1407,10 +1404,9 @@ Do you want to force this connection?"
                    acknowledgeSessionKicked();
                    handleDisconnect();
                 }}
-                title="Disconnected"
-                message="Another connection for this user was detected in a different tab/browser. 
-You have been disconnected from this session."
-                confirmText="Proceed"
+                title={t('modal.disconnected.title')}
+                message={t('modal.disconnected.msg')}
+                confirmText={t('modal.disconnected.confirm')}
                 cancelText=""
                 isDanger={false}
             />

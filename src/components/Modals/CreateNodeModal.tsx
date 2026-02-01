@@ -96,7 +96,7 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
 
     const handleCreate = () => {
         if (!title.trim()) {
-            showToast("Title is required", "error");
+            showToast(t('toast.create.required'), "error");
             return;
         }
         addNode({
@@ -110,7 +110,7 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
             createdAt: new Date().toISOString()
         });
         
-        showToast("Component Created", "success");
+        showToast(t('toast.create.success'), "success");
         // Reset form or close? Usually keep open for multiple creates if floating, but user might expect close. 
         // Sidebar stays open. Let's start with resetting form.
         setTitle('');
@@ -141,14 +141,14 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
              try {
                 data = JSON.parse(jsonInput);
              } catch {
-                 showToast('JSON Parse Error', 'error');
+                 showToast(t('toast.json.error'), 'error');
                  return;
              }
         }
 
         try {
             if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-                showToast('Invalid JSON object', 'error');
+                showToast(t('toast.json.invalid'), 'error');
                 return;
             }
 
@@ -157,9 +157,9 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
             setProps(prev => [...prev, ...newProps]);
             setJsonInput('');
             setShowJsonImport(false);
-            showToast(`Imported ${newProps.length} properties via ${mode}`, 'success');
+            showToast(`${t('toast.json.imported')} (${newProps.length})`, 'success');
         } catch {
-            showToast('Processing Error', 'error');
+            showToast(t('toast.process.error'), 'error');
         }
     };
 
@@ -197,13 +197,13 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
 
                 } catch (err) {
                     console.error(err);
-                    showToast(`Failed to parse ${file.name}`, 'error');
+                    showToast(t('toast.bulk.failed') + ': ' + file.name, 'error');
                 }
             };
             reader.readAsText(file);
         });
         
-        showToast(`Processing ${files.length} files...`, 'info');
+        showToast(t('toast.bulk.processing'), 'info');
         e.target.value = '';
     };
 
@@ -344,7 +344,7 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ onClose }) => 
                      
                      {isBulkImportOpen && (
                          <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 shadow-sm animate-fade-in">
-                             <p className="text-[9px] text-slate-400 mb-2 leading-tight">Create multiple components (one per file). Filename = Component Name.</p>
+                             <p className="text-[9px] text-slate-400 mb-2 leading-tight">{t('lbl.bulk.help')}</p>
                              <div className="flex gap-2">
                                 <label className="flex-1 cursor-pointer bg-white dark:bg-slate-800 border border-dashed border-indigo-300 dark:border-indigo-700 rounded p-2 text-center hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors flex flex-col items-center justify-center gap-1 group">
                                     <FileJson size={16} className="text-indigo-400 group-hover:text-indigo-600" />

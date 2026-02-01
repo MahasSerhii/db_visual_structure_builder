@@ -160,7 +160,7 @@ export const CommentsListModal: React.FC<CommentsListModalProps> = ({ onClose })
                             {c.replies && c.replies.length > 0 && (
                                 <div className="mt-2 flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500">
                                     <MessageSquare size={10} />
-                                    <span>{c.replies.length} replies</span>
+                                    <span>{c.replies.length} {t('list.comm.replies')}</span>
                                 </div>
                             )}
                         </div>

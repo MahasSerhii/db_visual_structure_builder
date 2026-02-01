@@ -81,7 +81,7 @@ export const TeamInviteSection: React.FC<TeamInviteSectionProps> = ({
                 }`} 
                 onClick={handleCopyMagicLink}
             >
-                <LinkIcon size={10} /> or copy magic link manually
+                <LinkIcon size={10} /> {t('data.invite.manual')}
             </div>
         </div>
     );
