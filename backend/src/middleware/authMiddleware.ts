@@ -13,6 +13,8 @@ export interface AuthRequest extends Request {
     role?: UserRole;
 }
 
+import mongoose from 'mongoose';
+
 // Middleware to verify token and get user
 export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
     // 1. Check Header
@@ -47,7 +49,18 @@ export const checkAccess = (roleRequired: UserRole[] = [UserRole.VIEWER, UserRol
         const projectIdStr = req.params.projectId || req.params.roomId;
 
         try {
-            const project = await Project.findOne({ roomId: projectIdStr });
+            // Find by _id (preferred) or by properties.roomId (legacy/fallback if string is not ObjectId)
+            let project: IProject | null = null;
+            
+            if (mongoose.isValidObjectId(projectIdStr)) {
+                 project = await Project.findById(projectIdStr);
+            } 
+            
+            if (!project) {
+                 // Try finding by custom roomId 
+                 project = await Project.findOne({ roomId: projectIdStr });
+            }
+
             if (!project) return res.status(404).json({ error: "Project not found" });
             req.project = project;
 

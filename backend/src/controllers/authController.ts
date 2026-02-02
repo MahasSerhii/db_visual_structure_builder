@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import User from '../models/User';
@@ -263,7 +264,7 @@ export const login = catchAsync(async (req: Request, res: Response) => {
         
         const projects = [
             ...ownedProjects.map(p => ({
-                id: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
+                id: p._id.toString(), roomId: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
             ...accessRecords
                 .filter((record: any) => record.projectId)
@@ -274,7 +275,7 @@ export const login = catchAsync(async (req: Request, res: Response) => {
                  const u = a.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
 
                  return {
-                    id: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
+                    id: a.projectId._id.toString(), roomId: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
                  };
             })
         ];
@@ -294,10 +295,6 @@ export const login = catchAsync(async (req: Request, res: Response) => {
         };
 
         res.json({ token, user: userObj, projects });
-    // } catch(e) { 
-    //    console.error("Login Error", e);
-    //    res.status(500).json({ error: "Login Error" }); 
-    // }
 });
 
 export const verifyAccess = async (req: Request, res: Response) => {
@@ -319,7 +316,13 @@ export const verifyAccess = async (req: Request, res: Response) => {
 
        if (!user) return res.json({ allowed: false });
        
-       const project = await Project.findOne({ roomId, isDeleted: false });
+       let project = null;
+       if (mongoose.isValidObjectId(roomId)) {
+            project = await Project.findOne({ _id: roomId, isDeleted: false });
+       }
+       if (!project) {
+            project = await Project.findOne({ roomId, isDeleted: false });
+       }
 
        // If project does not exist yet, and we have a valid user, they might be about to create it.
        // Allow them to proceed so they can hit the /init endpoint.
@@ -471,7 +474,8 @@ export const getUser = async (req: Request, res: Response) => {
 
         const projects = [
             ...ownedProjects.map(p => ({
-                id: p.roomId, 
+                id: p._id.toString(), 
+                roomId: p.roomId, 
                 name: p.name, 
                 role: 'owner', 
                 author: user.name, 
@@ -492,7 +496,8 @@ export const getUser = async (req: Request, res: Response) => {
                  const authorName = a.authorId ? a.authorId.name : 'Unknown';
 
                  return {
-                    id: a.projectId.roomId, 
+                    id: a.projectId._id.toString(), 
+                    roomId: a.projectId.roomId,
                     name: a.projectId.name, 
                     role: u ? u.role : 'Viewer', 
                     author: authorName, 
@@ -586,7 +591,7 @@ export const socialLogin = async (req: Request, res: Response) => {
         
         const projects = [
             ...ownedProjects.map(p => ({
-                id: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
+                id: p._id.toString(), roomId: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
             ...accessRecords
                 .filter((record: any) => record.projectId)
@@ -597,7 +602,7 @@ export const socialLogin = async (req: Request, res: Response) => {
                  const u = a.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
 
                  return {
-                    id: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
+                    id: a.projectId._id.toString(), roomId: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
                  };
             })
         ];

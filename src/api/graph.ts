@@ -14,8 +14,8 @@ export const graphApi = {
         return apiClient.get<GraphDataResponse>(`/graph/${roomId}`);
     },
 
-    initGraph: (data: { roomId: string, name?: string, isPublic?: boolean, config?: ProjectConfig }) => {
-        return apiClient.post<ApiResponse>('/graph/init', data);
+    initGraph: (data: { roomId?: string, name?: string, isPublic?: boolean, config?: ProjectConfig }) => {
+        return apiClient.post<{ success: boolean, project: { _id: string, roomId: string, name: string } }>('/graph/init', data);
     },
 
     deleteGraph: (roomId: string) => {

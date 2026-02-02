@@ -46,8 +46,10 @@ export const UpdateProfileRequestSchema = z.object({
 
 export const GraphProjectSchema = z.object({
     _id: z.string(),
+    roomId: z.string(),
     name: z.string(),
     ownerId: z.string(),
+    role: z.string().optional(),
     isPublic: z.boolean(),
     config: ProjectConfigSchema.optional()
 });

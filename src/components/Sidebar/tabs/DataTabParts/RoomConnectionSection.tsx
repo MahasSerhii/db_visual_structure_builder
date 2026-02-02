@@ -10,7 +10,8 @@ interface RoomConnectionSectionProps {
     isConnected: boolean;
     isRestoringSession: boolean;
     isLiveMode: boolean;
-    roomId: string;
+    roomId: string; // This is the ID used for operations (or input)
+    displayRoomId?: string; // This is the ID to show to the user (e.g. share code)
     setRoomId: (val: string) => void;
     handleDeleteDB: () => void;
     handleDisconnect: () => void;
@@ -29,7 +30,7 @@ interface RoomConnectionSectionProps {
 }
 
 export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
-    t, isClientMode, isConnected, isRestoringSession, isLiveMode, roomId, setRoomId,
+    t, isClientMode, isConnected, isRestoringSession, isLiveMode, roomId, displayRoomId, setRoomId,
     handleDeleteDB, handleDisconnect, isConnecting, connectionStatus, handleConnect, toggleLiveMode, lastSyncTime,
     isAuthenticated, onOpenAuthModal
 }) => {
@@ -39,11 +40,14 @@ export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
     const isLiveActive = isLiveMode && connectionStatus === 'connected';
     const isLiveConnecting = isLiveMode && (connectionStatus === 'connecting' || connectionStatus === 'reconnecting' || (isConnecting && connectionStatus !== 'connected'));
     const isLiveFailed = isLiveMode && connectionStatus === 'failed';
+    
+    // Prefer showing the display ID (Share Code) if available, otherwise fallback to known ID
+    const visibleRoomId = displayRoomId || roomId;
 
     // UI State
 
     const copyRoomId = () => {
-        navigator.clipboard.writeText(roomId);
+        navigator.clipboard.writeText(visibleRoomId);
         showToast(t('toast.copied'), 'success');
     };
 
@@ -128,8 +132,8 @@ export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
                             {/* Room Info */}
                             <div className="flex-1 text-xs px-3 py-2.5 bg-white border border-indigo-100 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all shadow-sm dark:bg-slate-900 dark:text-slate-200 dark:placeholder-slate-500">
                                 <div className="flex items-center gap-2 overflow-hidden">
-                                    <code className="text-[10px] font-mono text-slate-600 dark:text-slate-300 truncate" title={roomId}>
-                                        {isClientMode ? "READ-ONLY LINKS" : roomId}
+                                    <code className="text-[10px] font-mono text-slate-600 dark:text-slate-300 truncate" title={visibleRoomId}>
+                                        {isClientMode ? "READ-ONLY LINKS" : visibleRoomId}
                                     </code>
                                 </div>
                             </div>

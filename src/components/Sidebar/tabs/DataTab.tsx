@@ -695,17 +695,28 @@ export const DataTab: React.FC = () => {
 
                 console.log("Room not found, creating new room:", roomId);
                 try {
-                    await graphApi.initGraph({ 
-                        roomId, 
+                    // Update: initGraph now returns the full project object including generated _id
+                    const initRes = await graphApi.initGraph({ 
+                        roomId, // Legacy/Name hint
                         name: `Project ${roomId}`,
                         config: {
                             canvasBg: config.canvasBg
                         }
                     });
+
+                    const newId = initRes.project._id;
+                    const realGeneratedRoomId = initRes.project.roomId;
+
                     showToast(t('toast.room.created'), "success");
                     // Refresh Projects List
                     refreshProjects();
-                } catch {
+                    
+                    // Restart connection flow with the CORRECT new ID
+                    // We return here to stop execution of the current flow which is bound to the old invalid ID
+                    return handleConnect(forceLiveMode, tokenOverride, newId);
+                    
+                } catch(err) {
+                    console.error("Creation failed", err);
                     setIsConnecting(false);
                     showToast(t('toast.room.failed'), "error");
                     return;
@@ -1391,6 +1402,8 @@ export const DataTab: React.FC = () => {
                     isRestoringSession={isRestoringSession}
                     isLiveMode={isLiveMode}
                     roomId={roomId}
+                    // Resolve distinct ID for display (Share Code) vs operation (Mongo ID)
+                    displayRoomId={savedProjects.find(p => p.id === currentRoomId)?.roomId}
                     setRoomId={setRoomId}
                     handleDeleteDB={handleDeleteDB}
                     handleDisconnect={onDisconnectClick}

@@ -34,7 +34,7 @@ export const revertHistory = catchAsync(async (req: AuthRequest, res: Response) 
                 const updatedNode = await Node.findOne({ projectId: req.project._id, nodeId: item.entityId });
                 const updatedNodeObj = updatedNode && (updatedNode.toObject ? updatedNode.toObject() : updatedNode);
                 if (updatedNodeObj) {
-                    getIO().to(req.params.projectId).emit('node:update', { ...updatedNodeObj, id: item.entityId });
+                    getIO().to(req.project!._id.toString()).emit('node:update', { ...updatedNodeObj, id: item.entityId });
                 }
                 reverted = true;
             }
@@ -43,7 +43,7 @@ export const revertHistory = catchAsync(async (req: AuthRequest, res: Response) 
                 { projectId: req.project._id, nodeId: item.entityId },
                 { isDeleted: true, updatedAt: new Date() }
             );
-            getIO().to(req.params.projectId).emit('node:delete', { id: item.entityId });
+            getIO().to(req.project!._id.toString()).emit('node:delete', { id: item.entityId });
             reverted = true;
         }
     } 
@@ -62,7 +62,7 @@ export const revertHistory = catchAsync(async (req: AuthRequest, res: Response) 
             const updatedEdgeObj = updatedEdge && (updatedEdge.toObject ? updatedEdge.toObject() : updatedEdge);
 
             if (updatedEdgeObj) {
-                getIO().to(req.params.projectId).emit('edge:update', { ...updatedEdgeObj, id: item.entityId });
+                getIO().to(req.project!._id.toString()).emit('edge:update', { ...updatedEdgeObj, id: item.entityId });
             }
             reverted = true;
             } else if (item.action.includes('Add')) {
@@ -70,7 +70,7 @@ export const revertHistory = catchAsync(async (req: AuthRequest, res: Response) 
                 { projectId: req.project._id, edgeId: item.entityId },
                 { isDeleted: true }
             );
-            getIO().to(req.params.projectId).emit('edge:delete', { id: item.entityId });
+            getIO().to(req.project!._id.toString()).emit('edge:delete', { id: item.entityId });
             reverted = true;
             }
     }
@@ -84,7 +84,7 @@ export const revertHistory = catchAsync(async (req: AuthRequest, res: Response) 
             timestamp: new Date()
         })) as IHistory;
         
-        getIO().to(req.params.projectId).emit('history:add', {
+        getIO().to(req.project!._id.toString()).emit('history:add', {
             id: h._id,
             action: h.action,
             details: h.details,
@@ -110,6 +110,6 @@ export const getHistory = catchAsync(async (req: AuthRequest, res: Response) => 
 export const clearHistory = catchAsync(async (req: AuthRequest, res: Response) => {
     if (!req.project) throw new UnauthorizedException(t(req.user?.language, "error.history.context_missing"));
     const result = await History.deleteMany({ projectId: req.project._id });
-    getIO().to(req.params.projectId).emit('history:clear');
+    getIO().to(req.project._id.toString()).emit('history:clear');
     res.json({ success: true, count: result.deletedCount });
 });

@@ -22,8 +22,8 @@ export interface IProject extends Document {
 }
 
 const ProjectSchema: Schema = new Schema({
-  roomId: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
+  roomId: { type: String, required: true, unique: true }, // The generated/random ID
+  name: { type: String, required: true }, // The display name
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   description: { type: String },
   // backgroundColor removed. stored in config.

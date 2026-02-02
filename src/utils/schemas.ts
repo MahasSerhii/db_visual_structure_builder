@@ -134,11 +134,12 @@ export const RoomAccessUserSchema = z.object({
 
 export const SavedProjectSchema = z.object({
     id: z.string(),
+    roomId: z.string().optional(),
     name: z.string(),
-    author: z.string(),
-    url: z.string(),
-    configStr: z.string(),
-    lastAccessed: z.number(),
+    author: z.string().optional(), // Make optional to handle legacy or minimal data
+    url: z.string().optional(), // Make optional as ID is main identifier now
+    configStr: z.string().optional(),
+    lastAccessed: z.number().optional(),
     role: z.string().optional(),
 });
 

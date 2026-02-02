@@ -20,7 +20,14 @@ const getEnrichedSessions = async (roomId: string) => {
     const sessions = await Session.find({ roomId });
     
     try {
-        const project = await Project.findOne({ roomId });
+        let project = null;
+        if (mongoose.isValidObjectId(roomId)) {
+             project = await Project.findById(roomId);
+        }
+        if (!project) {
+             project = await Project.findOne({ roomId });
+        }
+        
         const sessionUserIds = sessions.map(s => s.userId).filter(id => !!id);
         
         // 2. Fetch User Profiles (Name, Color)
@@ -100,11 +107,32 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
     io.on('connection', (socket: Socket) => {
         console.log('Client connected', socket.id);
 
-        socket.on('join-room', async (data: { roomId: string, userName: string, userColor: string, userId?: string, isVisible?: boolean, userEmail?: string }) => {
+        socket.on('join-room', async (data: { roomId: string, userName: string, userColor: string, userId?: string, isVisible?: boolean, userEmail?: string, force?: boolean }) => {
             const { roomId, userId, userName, userColor, isVisible, userEmail } = data;
  
-            socket.join(roomId);
-            console.log(`Socket ${socket.id} joined room ${roomId}`);
+            // Resolve Canonical Project ID for Room Name
+            let canonicalRoomId = roomId;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            let project: any = null;
+
+            try {
+                if (mongoose.Types.ObjectId.isValid(roomId)) {
+                    project = await Project.findById(roomId);
+                } else {
+                    project = await Project.findOne({ roomId });
+                }
+
+                if (project) {
+                    canonicalRoomId = project._id.toString();
+                } else {
+                    console.warn(`[Socket] Join Room: Project not found for ${roomId}`);
+                }
+            } catch (e) {
+                console.error("[Socket] Join Room Resolution Error", e);
+            }
+
+            socket.join(canonicalRoomId);
+            console.log(`Socket ${socket.id} joined room ${canonicalRoomId} (Input: ${roomId})`);
 
             // Validate/Resolve User ID
             let resolvedUserId: mongoose.Types.ObjectId | undefined = undefined;
@@ -128,22 +156,21 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                  }
             }
             
-            console.log(`[Socket] Join Room: ${roomId}, Socket: ${socket.id}, InputID: ${userId}, ResolvedID: ${resolvedUserId}`);
+            console.log(`[Socket] Join Room: ${canonicalRoomId}, Socket: ${socket.id}, InputID: ${userId}, ResolvedID: ${resolvedUserId}`);
 
             // Save Session
             try {
                 // Eliminate duplicates by userId if present (optional logic)
                 if (resolvedUserId) {
                      // Check for existing sessions
-                     const oldSessions = await Session.find({ roomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
+                     const oldSessions = await Session.find({ roomId: canonicalRoomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
                      
                      if (oldSessions.length > 0) {
-                        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                        // @ts-ignore
+                        
                         if (!data.force) {
                             console.log(`[Socket] Conflict detected for user ${resolvedUserId}. Emitting session:conflict.`);
                             socket.emit('session:conflict', { message: "Only one connection for one user available in this room." });
-                            socket.leave(roomId); // Ensure it's not subscribed
+                            socket.leave(canonicalRoomId); // Ensure it's not subscribed
                             return;
                         }
 
@@ -155,7 +182,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                                 message: "You have been disconnected because this room was opened in another tab."
                             });
                         }
-                        await Session.deleteMany({ roomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
+                        await Session.deleteMany({ roomId: canonicalRoomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
                      }
                 }
 
@@ -163,7 +190,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                     { socketId: socket.id },
                     { 
                         socketId: socket.id, 
-                        roomId, 
+                        roomId: canonicalRoomId, // Store Canonical ID (Mongo _id)
                         userId: resolvedUserId, // Now safely ObjectId or undefined
                         userName,
                         userColor,
@@ -174,26 +201,23 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                 );
 
                 // Update Access: Set authorised = true on entry
-                if (resolvedUserId) {
-                     const project = await Project.findOne({ roomId });
+                if (resolvedUserId && project) { 
+                     // Use the already resolved 'project' variable instead of finding again
+                     const filter = { 
+                            projectId: project._id, 
+                            "access_granted.userId": resolvedUserId 
+                        };
 
-                     if (project) {
-                         const filter = { 
-                                projectId: project._id, 
-                                "access_granted.userId": resolvedUserId 
-                            };
-
-                         await Access.updateOne(
-                            filter,
-                            { $set: { "access_granted.$.authorised": true } }
-                         );
-                     }
+                     await Access.updateOne(
+                        filter,
+                        { $set: { "access_granted.$.authorised": true } }
+                     ).catch(err => console.error("Failed to update access authorization", err));
                 }
 
                 // Broadcast active users
-                const users = await getEnrichedSessions(roomId);
+                const users = await getEnrichedSessions(canonicalRoomId);
 
-                io.to(roomId).emit('presence:update', users);
+                io.to(canonicalRoomId).emit('presence:update', users);
             } catch(e) { console.error("Session Save Error", e); }
         });
 

@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import mongoose from 'mongoose';
 import Project from '../models/Project';
 import Node from '../models/Node';
 import Edge from '../models/Edge';
@@ -14,7 +15,6 @@ import { t } from '../utils/i18n';
 import { UserRole } from '../types/enums';
 import { 
     UnauthorizedException, 
-    ConflictException, 
     InternalServerException
 } from '../exceptions/HttpExceptions';
 
@@ -22,46 +22,32 @@ import {
 const getLang = (req: AuthRequest) => (req.user as any)?.language;
 
 export const createProject = catchAsync(async (req: AuthRequest, res: Response) => {
-    const { roomId, name, config } = req.body;
+    const { name, config } = req.body; 
     
-    let project = await Project.findOne({ roomId });
+    // Generate a unique roomId (e.g. timestamp + random suffix)
+    const generatedRoomId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
-    if (!project) {
-        if (!req.user) throw new UnauthorizedException(t(getLang(req), "error.history.context_missing"));
+    const project = await Project.create({
+        roomId: generatedRoomId, // Unique random ID
+        name: name || `Project ${generatedRoomId}`,
+        ownerId: req.user?._id,
+        config: config
+    });
 
-        // Check if a project with the same name already exists
-        const existingProjectWithName = await Project.findOne({ 
-            name: name || `Project ${roomId}`,
-            isDeleted: false 
-        });
-
-        if (existingProjectWithName) {
-             throw new ConflictException(
-                "You have no access for this room. Please contact the author of the room or create a room with a different name.",
-                "ROOM_NAME_EXISTS"
-            );
-        }
-
-        project = await Project.create({
-            roomId,
-            name: name || `Project ${roomId}`,
-            ownerId: req.user._id,
-            config: config
-        });
-
-        // Create Access Record for this (new) project
-        await Access.create({
-            projectId: project._id,
-            authorId: req.user._id,
-            access_granted: [{ 
-                userId: req.user._id,
-                authorised: true, // Creator is authorized
-                role: UserRole.ADMIN,
-                visible: true,
-                joinedAt: new Date()
-            }]
-        });
-    }
+    // Create Access Record for this (new) project
+    await Access.create({
+        projectId: project._id,
+        authorId: req.user?._id,
+        access_granted: [{ 
+            userId: req.user?._id,
+            authorised: true, 
+            role: UserRole.ADMIN,
+            visible: true,
+            joinedAt: new Date()
+        }]
+    });
+    
+    // We return project which contains _id and roomId
     res.json({ success: true, project });
 });
 
@@ -130,14 +116,19 @@ export const saveProject = catchAsync(async (req: AuthRequest, res: Response) =>
         throw new UnauthorizedException(t(getLang(req), "error.history.context_missing"));
     }
     
-    const roomId = pData.id;
-    let project = await Project.findOne({ roomId });
+    // Legacy support: pData.id might be a name or an ID?
+    // If we are saving, we likely have an ID.
+    const projectSearch = mongoose.isValidObjectId(pData.id) ? { _id: pData.id } : { roomId: pData.id };
+    
+    let project = await Project.findOne(projectSearch);
     
     if (!project) {
+        // If not found, create new using auto-generated roomId
         try {
+            const generatedRoomId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
             project = await Project.create({
-                roomId,
-                name: pData.name || `Project ${roomId}`,
+                roomId: generatedRoomId,
+                name: pData.name || `Project ${generatedRoomId}`,
                 ownerId: req.user._id,
                 config: {}
             });
@@ -154,11 +145,7 @@ export const saveProject = catchAsync(async (req: AuthRequest, res: Response) =>
                 }]
             });
         } catch (createErr: any) {
-            if (createErr.code === 11000) {
-                    project = await Project.findOne({ roomId });
-            } else {
-                throw createErr;
-            }
+             throw createErr;
         }
     }
     
@@ -184,5 +171,6 @@ export const saveProject = catchAsync(async (req: AuthRequest, res: Response) =>
             }
     }
 
-    res.json({ success: true, projectId: project.roomId });
+    // Return current _id so client can update
+    res.json({ success: true, projectId: project._id.toString(), realRoomId: project.roomId });
 });

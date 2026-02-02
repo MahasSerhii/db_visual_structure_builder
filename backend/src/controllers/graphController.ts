@@ -46,6 +46,8 @@ export const getGraph = catchAsync(async (req: AuthRequest, res: Response) => {
             edges: cleanEdges,
             comments: cleanComments,
             project: {
+                _id: req.project._id,
+                roomId: req.project.roomId,
                 name: req.project.name,
                 role: req.role,
                 config: config,
@@ -77,7 +79,7 @@ export const addNode = catchAsync(async (req: AuthRequest, res: Response) => {
         updatedBy: req.user._id
     });
 
-    getIO().to(req.params.projectId).emit('node:update', {
+    getIO().to(req.project!._id.toString()).emit('node:update', {
             ...req.body, // Optimistic echo
             id 
     });
@@ -91,7 +93,7 @@ export const addNode = catchAsync(async (req: AuthRequest, res: Response) => {
         entityType: 'node',
         entityId: id
     });
-    getIO().to(req.params.projectId).emit('history:add', { /* ... */ }); // Simplified history emit logic
+    getIO().to(req.project!._id.toString()).emit('history:add', { /* ... */ }); // Simplified history emit logic
 
     res.json({ success: true, node });
 });
@@ -120,7 +122,7 @@ export const updateNode = catchAsync(async (req: AuthRequest, res: Response) => 
     
     await oldNode.save();
 
-    getIO().to(req.params.projectId).emit('node:update', { ...req.body, id: nodeId });
+    getIO().to(req.project!._id.toString()).emit('node:update', { ...req.body, id: nodeId });
 
     await History.create({
         projectId: req.project._id,
@@ -148,7 +150,7 @@ export const deleteNode = catchAsync(async (req: AuthRequest, res: Response) => 
     node.isDeleted = true;
     await node.save();
 
-    getIO().to(req.params.projectId).emit('node:delete', { id: nodeId });
+    getIO().to(req.project!._id.toString()).emit('node:delete', { id: nodeId });
     
     await History.create({
         projectId: req.project._id,
@@ -181,7 +183,7 @@ export const addEdge = catchAsync(async (req: AuthRequest, res: Response) => {
         createdBy: req.user._id
     });
     
-    getIO().to(req.params.projectId).emit('edge:update', { ...req.body, id });
+    getIO().to(req.project!._id.toString()).emit('edge:update', { ...req.body, id });
     
     await History.create({
         projectId: req.project._id,
@@ -212,7 +214,7 @@ export const updateEdge = catchAsync(async (req: AuthRequest, res: Response) => 
         edge.style = style;
         await edge.save();
         
-        getIO().to(req.params.projectId).emit('edge:update', { ...req.body, id: edgeId });
+        getIO().to(req.project!._id.toString()).emit('edge:update', { ...req.body, id: edgeId });
         
         await History.create({
             projectId: req.project._id,
@@ -238,7 +240,7 @@ export const deleteEdge = catchAsync(async (req: AuthRequest, res: Response) => 
     edge.isDeleted = true;
     await edge.save();
     
-    getIO().to(req.params.projectId).emit('edge:delete', { id: edgeId });
+    getIO().to(req.project!._id.toString()).emit('edge:delete', { id: edgeId });
     
     await History.create({
         projectId: req.project._id,
@@ -266,7 +268,7 @@ export const addComment = catchAsync(async (req: AuthRequest, res: Response) => 
         timestamp: new Date()
     });
     
-    getIO().to(req.params.projectId).emit('comment:update', { ...req.body, id, authorName: req.user.name, timestamp: Date.now() });
+    getIO().to(req.project!._id.toString()).emit('comment:update', { ...req.body, id, authorName: req.user.name, timestamp: Date.now() });
     
     res.json({ success: true });
 });
@@ -285,7 +287,7 @@ export const updateComment = catchAsync(async (req: AuthRequest, res: Response) 
     comment.resolved = resolved;
     await comment.save();
     
-    getIO().to(req.params.projectId).emit('comment:update', { 
+    getIO().to(req.project!._id.toString()).emit('comment:update', { 
         ...req.body, 
         id: commentId, 
         authorName: comment.authorName, 
@@ -305,7 +307,7 @@ export const deleteComment = catchAsync(async (req: AuthRequest, res: Response) 
     comment.isDeleted = true;
     await comment.save();
     
-    getIO().to(req.params.projectId).emit('comment:delete', { id: commentId });
+    getIO().to(req.project!._id.toString()).emit('comment:delete', { id: commentId });
     
     res.json({ success: true });
 });
@@ -349,8 +351,8 @@ export const clearGraph = catchAsync(async (req: AuthRequest, res: Response) => 
             timestamp: new Date()
         })) as IHistory;
 
-        getIO().to(roomId).emit('room:cleared');
-        getIO().to(roomId).emit('history:add', {
+        getIO().to(projectId.toString()).emit('room:cleared');
+        getIO().to(projectId.toString()).emit('history:add', {
             id: h._id,
             action: h.action,
             details: h.details,
