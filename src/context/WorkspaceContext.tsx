@@ -17,6 +17,7 @@ interface WorkspaceContextType {
     setActiveTabId: (id: string) => void;
     updateTab: (id: string, data: Partial<TabData>) => void;
     getTabByRoomId: (roomId: string) => TabData | undefined;
+    reorderTabs: (newOrder: TabData[]) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -131,6 +132,10 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
         return tabs.find(t => t.roomId === roomId);
     }, [tabs]);
 
+    const reorderTabs = useCallback((newOrder: TabData[]) => {
+        setTabs(newOrder);
+    }, []);
+
     return (
         <WorkspaceContext.Provider value={{
             tabs,
@@ -139,7 +144,8 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
             closeTab,
             setActiveTabId,
             updateTab,
-            getTabByRoomId
+            getTabByRoomId,
+            reorderTabs
         }}>
             {children}
         </WorkspaceContext.Provider>
