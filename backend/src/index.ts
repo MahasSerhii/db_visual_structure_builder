@@ -19,23 +19,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' })); 
 
-// MongoDB Connection
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('MongoDB Connected'))
-  .catch(err => console.error('MongoDB Connection Error:', err));
-
-mongoose.connection.on('error', err => {
-    console.error('MongoDB Runtime Error:', err);
-});
-
-mongoose.connection.on('disconnected', () => {
-    console.log('MongoDB Disconnected - Attempting to help backend stay alive');
-});
-
 // HTTP Server & Socket.io
 const server = http.createServer(app);
-
-initSocket(server, CLIENT_URL);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -56,7 +41,27 @@ app.all('*', (req, res, next) => {
 // Global Error Handler
 app.use(errorHandler);
 
-server.listen(PORT, () => {
+// MongoDB Connection
+mongoose.connect(MONGO_URI)
+  .then(() => {
+    console.log('MongoDB Connected');
+    
+    // Init Socket & Start Server only after DB is ready
+    initSocket(server, CLIENT_URL);
+    
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('MongoDB Connection Error:', err);
+    process.exit(1);
+  });
 
-  console.log(`Server running on port ${PORT}`);
+mongoose.connection.on('error', err => {
+    console.error('MongoDB Runtime Error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('MongoDB Disconnected - Attempting to help backend stay alive');
 });

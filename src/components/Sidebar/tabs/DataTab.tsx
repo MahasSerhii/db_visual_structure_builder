@@ -132,7 +132,9 @@ export const DataTab: React.FC = () => {
         }
     };
     
-    const isProjectActive = (id: string) => id === currentRoomId;
+    const isProjectActive = (id: string, projectRoomId?: string) => {
+        return id === currentRoomId || (!!projectRoomId && projectRoomId === currentRoomId);
+    };
     
     const [isCSVModalOpen, setCSVModalOpen] = useState(false);
     const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
@@ -1446,7 +1448,7 @@ export const DataTab: React.FC = () => {
                                                      (p.author === 'Me' || p.author === 'You'); // Fallback for some localized logic if exists
 
                                     return (
-                                        <div key={p.id} className={`p-3 border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between group ${isProjectActive(p.id) ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
+                                        <div key={p.id} className={`p-3 border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between group ${isProjectActive(p.id, p.roomId) ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
                                             <div className="min-w-0 flex-1">
                                                 <div className="text-xs font-bold text-gray-700 dark:text-gray-300 truncate flex items-center gap-1.5" title={p.name}>
                                                     {p.name}
@@ -1473,7 +1475,7 @@ export const DataTab: React.FC = () => {
                                             </div>
                                             
                                             <div className="flex items-center gap-2">
-                                                {isProjectActive(p.id) ? (
+                                                {isProjectActive(p.id, p.roomId) ? (
                                                     <span className="flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
                                                         <Activity size={10} />
                                                     </span>

@@ -2,7 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../exceptions/AppError';
 
 export const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Error caught by middleware:', err);
+  // Only log stack trace for 500 errors or non-operational errors
+  if (err instanceof AppError && err.isOperational && err.statusCode < 500) {
+      console.log(`[${err.statusCode}] ${err.code}: ${err.message}`);
+  } else {
+      console.error('Error caught by middleware:', err);
+  }
 
   let statusCode = 500;
   let message = 'Internal Server Error';
