@@ -11,18 +11,19 @@ interface ManageAccessModalProps {
     currentUserId?: string | null;
     onRemoveUser: (accessId: string, userName: string) => void;
     onChangeRole: (accessId: string, newRole: string) => void;
-    isOwner: boolean;
+    currentUserRole?: string; // Replace isOwner with more granular role
     t: (key: string) => string;
 }
 
 export const ManageAccessModal: React.FC<ManageAccessModalProps> = ({
-    isOpen, onClose, projectId, projectName, users, currentUserId, onRemoveUser, onChangeRole, isOwner, t
+    isOpen, onClose, projectId, projectName, users, currentUserId, onRemoveUser, onChangeRole, currentUserRole, t
 }) => {
     if (!isOpen) return null;
-
-    // Filter out users who are Owners if the current user is not an owner (unlikely scenario but safe)
-    // Actually, usually only Owners can see this modal for full management.
-    // If we are just a viewer, we probably shouldn't see this or only see a read-only list.
+    
+    const myRole = (currentUserRole || '').toLowerCase();
+    const isOwner = myRole === 'owner' || myRole === 'host';
+    const isAdmin = myRole === 'admin';
+    const canView = isOwner || isAdmin; // Currently only management roles see this. Viewers viewing list? Maybe later.
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -59,9 +60,17 @@ export const ManageAccessModal: React.FC<ManageAccessModalProps> = ({
                             const isMe = currentUserId && (user.userId === currentUserId || user.email === currentUserId); // Rough check
                             const isOtherOwner = user.role === 'owner';
                             
+                            const targetRole = (user.role || '').toLowerCase();
+                            const isTargetOwner = targetRole === 'owner' || targetRole === 'host';
+                            const isTargetAdmin = targetRole === 'admin';
+
                             // Can I manage this user?
-                            // Only if I'm owner and they are NOT me.
-                            const canManage = isOwner && !isMe;
+                            // Owner > All (except self)
+                            // Admin > Editor/Viewer
+                            const canManage = !isMe && (
+                                isOwner || 
+                                (isAdmin && !isTargetOwner && !isTargetAdmin)
+                            );
 
                             return (
                                 <div key={user.accessId || user.email} className="flex items-center justify-between p-3 rounded-xl border border-transparent hover:border-indigo-50 hover:bg-indigo-50/30 dark:hover:border-slate-700 dark:hover:bg-slate-800/50 transition-all group">
@@ -82,10 +91,19 @@ export const ManageAccessModal: React.FC<ManageAccessModalProps> = ({
                                     <div className="flex items-center gap-2">
                                         {canManage ? (
                                             <>
-                                                {/* Role Switcher could go here */}
+                                                <select
+                                                    value={user.role}
+                                                    onChange={(e) => onChangeRole(user.userId!, e.target.value)}
+                                                    disabled={!user.userId}
+                                                    className="text-[10px] font-medium text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md py-1 px-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <option value="Viewer">Viewer</option>
+                                                    <option value="Editor">Editor</option>
+                                                    <option value="Admin">Admin</option>
+                                                </select>
                                                 <button 
                                                     onClick={() => onRemoveUser(user.accessId!, user.name)}
-                                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors group-hover:opacity-100"
                                                     title={t('Remove User')}
                                                 >
                                                     <Trash2 size={14} />

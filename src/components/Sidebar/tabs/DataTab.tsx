@@ -43,7 +43,7 @@ export const DataTab: React.FC = () => {
         sessionConflict, resolveSessionConflict,
         sessionKicked, acknowledgeSessionKicked, savedProjects, tabId,
         setNodes, setEdges, setComments, setConfig, refreshProjects,
-        projectDeletedEvent, setProjectDeletedEvent 
+        projectDeletedEvent, setProjectDeletedEvent, lastAccessUpdate 
     } = useGraph();
     const { showToast } = useToast();
     const { addTab, updateTab, activeTabId } = useWorkspace(); // <--- Destructured activeTabId
@@ -109,7 +109,16 @@ export const DataTab: React.FC = () => {
 
     const uniqueSavedProjects = React.useMemo(() => {
         const unique = new Map();
-        savedProjects.forEach(p => unique.set(p.id, p));
+        savedProjects.forEach(p => {
+            if (unique.has(p.id)) {
+                const existing = unique.get(p.id);
+                // Priority: Owner > Admin > Editor > Viewer
+                if ((existing.role === 'owner' || existing.role === 'host')) return;
+                unique.set(p.id, p);
+            } else {
+                unique.set(p.id, p);
+            }
+        });
         return Array.from(unique.values());
     }, [savedProjects]);
 
@@ -139,9 +148,25 @@ export const DataTab: React.FC = () => {
     const [isCSVModalOpen, setCSVModalOpen] = useState(false);
     const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
     const [isClearGraphModalOpen, setClearGraphModalOpen] = useState(false);
+
+    // Initialize ClientMode derived from URL to prevent UI flicker
+    // UPDATED: Now we treat "Client Mode" (Guest UI) as default ONLY if we are not the Host.
+    // We update this state after role verification.
+    const [isClientMode, setIsClientMode] = useState(() => {
+        const p = new URLSearchParams(window.location.search);
+        // Default to client mode if link parameters exist
+        return (!!p.get('config') && !!p.get('room')) || !!p.get('token');
+    });
     
     // Room Access Management
     const [roomAccessUsers, setRoomAccessUsers] = useState<RoomAccessUser[]>([]);
+
+    const activeUserRole = React.useMemo(() => {
+        if (!roomAccessUsers || !currentUserId) return isClientMode ? 'guest' : '';
+        const me = roomAccessUsers.find(u => u.userId === currentUserId);
+        return me?.role || (isClientMode ? 'guest' : '');
+    }, [roomAccessUsers, currentUserId, isClientMode]);
+
     const [isRemoveUserConfirmOpen, setIsRemoveUserConfirmOpen] = useState(false);
     const [isLeaveRoomConfirmOpen, setIsLeaveRoomConfirmOpen] = useState(false);
     const [userToRemove, setUserToRemove] = useState<{ accessId: string; name: string } | null>(null);
@@ -158,14 +183,6 @@ export const DataTab: React.FC = () => {
     const [incomingInviteToken, setIncomingInviteToken] = useState('');
     const [resetToken, setResetToken] = useState('');
 
-    // Initialize ClientMode derived from URL to prevent UI flicker
-    // UPDATED: Now we treat "Client Mode" (Guest UI) as default ONLY if we are not the Host.
-    // We update this state after role verification.
-    const [isClientMode, setIsClientMode] = useState(() => {
-        const p = new URLSearchParams(window.location.search);
-        // Default to client mode if link parameters exist
-        return (!!p.get('config') && !!p.get('room')) || !!p.get('token');
-    });
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [linkAllowEdit, setLinkAllowEdit] = useState(true);
@@ -1327,7 +1344,7 @@ export const DataTab: React.FC = () => {
         if (isLiveMode && isConnected && currentProjectId && !isClientMode) {
             fetchRoomAccessUsers();
         }
-    }, [isLiveMode, isConnected, currentProjectId, isClientMode, fetchRoomAccessUsers]);
+    }, [isLiveMode, isConnected, currentProjectId, isClientMode, fetchRoomAccessUsers, lastAccessUpdate]);
 
     const handleOpenManageAccess = async (project: SavedProject) => {
         setSelectedProjectForAccess(project);
@@ -1362,11 +1379,25 @@ export const DataTab: React.FC = () => {
          }
     };
 
-    const handleChangeUserRole = async (accessId: string, newRole: string) => {
-        // Implement if backend supports it
-        // Currently graphApi.inviteUser handles role changes usually or a specific update endpoint.
-        // Assuming update endpoint exists or we skip for now.
-        console.log("Change role implementation pending backend support", accessId, newRole);
+    const handleChangeUserRole = async (targetUserId: string, newRole: string) => {
+        const projectId = selectedProjectForAccess?.id || currentProjectId;
+        if (!projectId) return;
+        
+        try {
+            await graphApi.updateAccessRole(projectId, targetUserId, newRole);
+            showToast("User role updated", "success");
+            
+            // Refresh list
+            const data = await graphApi.getAccess(projectId);
+            setProjectAccessUsers(data.users || []);
+            
+            if (projectId === currentProjectId) {
+                fetchRoomAccessUsers();
+            }
+        } catch(e) {
+            console.error("Failed to update role", e);
+            showToast("Failed to update role", "error");
+        }
     };
 
     const handleDisconnectDeleted = async () => {
@@ -1470,9 +1501,10 @@ export const DataTab: React.FC = () => {
                                 {uniqueSavedProjects.map((p) => {
                                     // Robust check for author/owner status
                                     const role = (p.role || '').toLowerCase();
-                                    const isAuthor = role === 'owner' || role === 'host' || 
+                                    const isOwner = role === 'owner' || role === 'host' || 
                                                      (userProfile?.name && p.author === userProfile.name) ||
-                                                     (p.author === 'Me' || p.author === 'You'); // Fallback for some localized logic if exists
+                                                     (p.author === 'Me' || p.author === 'You');
+                                    const isAdmin = role === 'admin';
 
                                     return (
                                         <div key={p.id} className={`p-3 border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-between group ${isProjectActive(p.id, p.roomId) ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
@@ -1484,9 +1516,14 @@ export const DataTab: React.FC = () => {
                                                     <span className="flex items-center gap-1">
                                                         <User size={10}/> 
                                                         {p.author}
-                                                        {isAuthor && (
-                                                            <div title="Admin">
+                                                        {isOwner && (
+                                                            <div title="Owner">
                                                                 <Crown size={10} className="text-amber-500 fill-amber-500" />
+                                                            </div>
+                                                        )}
+                                                        {isAdmin && (
+                                                            <div title="Admin">
+                                                                <Shield size={10} className="text-indigo-500 fill-indigo-500" />
                                                             </div>
                                                         )}
                                                     </span>
@@ -1543,23 +1580,22 @@ export const DataTab: React.FC = () => {
                      {(() => {
                          const p = contextMenuCtx.project;
                          const role = (p.role || '').toLowerCase();
-                         const isAuthor = role === 'owner' || role === 'host' || 
+                         const isOwner = role === 'owner' || role === 'host' || 
                                           (userProfile?.name && p.author === userProfile.name);
+                         const isAdmin = role === 'admin';
 
                          return (
                              <>
-                                {isAuthor && (
-                                     <button 
-                                        onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            setContextMenuCtx(null);
-                                            handleOpenManageAccess(p); 
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-gray-600 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 flex items-center gap-2"
-                                     >
-                                         <Shield size={12} /> {t('Manage Access')}
-                                     </button>
-                                 )}
+                                 <button 
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        setContextMenuCtx(null);
+                                        handleOpenManageAccess(p); 
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs text-gray-600 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 flex items-center gap-2"
+                                 >
+                                     <Shield size={12} /> {t('Manage Access')}
+                                 </button>
                                  <button 
                                     onClick={(e) => { 
                                         e.stopPropagation(); 
@@ -1570,10 +1606,10 @@ export const DataTab: React.FC = () => {
                                  >
                                      <Copy size={12} /> {t('Copy Link')}
                                  </button>
-                                 {isAuthor && (
+                                 {isOwner && (
                                      <div className="border-t border-gray-100 dark:border-slate-700 my-1"></div>
                                  )}
-                                  {isAuthor && (
+                                  {isOwner && (
                                       <button 
                                           onClick={(e) => { 
                                               e.stopPropagation(); 
@@ -1636,9 +1672,10 @@ export const DataTab: React.FC = () => {
                         userProfile={userProfile}
                         currentUserId={currentUserId}
                         mySocketId={mySocketId}
-                        isProjectAuthor={!isClientMode && isLiveMode}
+                        currentUserRole={activeUserRole}
                         onRemoveUser={handleRemoveUserFromRoom}
                         onLeaveRoom={handleLeaveRoom}
+                        onChangeUserRole={handleChangeUserRole}
                         roomAccessUsers={roomAccessUsers}
                     />
                 )}
@@ -1799,7 +1836,7 @@ export const DataTab: React.FC = () => {
                     currentUserId={currentUserId}
                     onRemoveUser={handleRemoveUserFromProject}
                     onChangeRole={handleChangeUserRole}
-                    isOwner={true} // Only owners can open this via context menu logic
+                    currentUserRole={selectedProjectForAccess.role}
                     t={t}
                 />
             )}

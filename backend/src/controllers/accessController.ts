@@ -28,10 +28,13 @@ export const getAccessList = catchAsync(async (req: AuthRequest, res: Response) 
 
     const users = accessDoc.access_granted.map((uItem) => {
         const u = uItem as unknown as { userId: IUser & { _id: string }, invitedEmail?: string, role: string, visible: boolean, joinedAt: Date };
+        
+        const uid = u.userId._id ?? u.userId;
 
         return {
-            id: u.userId._id ?? u.userId,
-            userId: u.userId._id ?? u.userId,
+            id: uid,
+            accessId: uid, // Needed for frontend identification
+            userId: uid,
             name: u.userId.name || 'Unknown',
             email: u.userId.email || u.invitedEmail || 'Unknown',
             role: u.role,

@@ -277,7 +277,7 @@ export const login = catchAsync(async (req: Request, res: Response) => {
                 id: p._id.toString(), projectId: p._id.toString(), roomId: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
             ...accessRecords
-                .filter((record: any) => record.projectId)
+                .filter((record: any) => record.projectId && record.projectId.ownerId.toString() !== user!._id.toString())
                 .map((record) => {
                  const a = record as unknown as (IAccess & { projectId: IProject });
                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -630,7 +630,7 @@ export const socialLogin = async (req: Request, res: Response) => {
                 id: p._id.toString(), projectId: p._id.toString(), name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
             ...accessRecords
-                .filter((record: any) => record.projectId)
+                .filter((record: any) => record.projectId && record.projectId.ownerId.toString() !== user!._id.toString())
                 .map((record) => {
                  const a = record as unknown as (IAccess & { projectId: IProject });
                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment

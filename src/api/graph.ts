@@ -38,6 +38,10 @@ export const graphApi = {
         return apiClient.delete<ApiResponse>(`/graph/${projectId}/access/${accessId}`);
     },
 
+    updateAccessRole: (projectId: string, targetUserId: string, role: string) => {
+        return apiClient.put<ApiResponse>(`/graph/${projectId}/access`, { targetUserId, role });
+    },
+
     // Legacy/Other endpoints inferred from usage
     saveProject: (data: SaveProjectRequest) => {
         return apiClient.post<ApiResponse>('/save-project', data);

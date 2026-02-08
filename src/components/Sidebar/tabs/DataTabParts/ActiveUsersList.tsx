@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { UserProfile, UserRoleType, ActiveSessionUser, RoomAccessUser } from '../../../../utils/types';
 import { ChevronUp, ChevronDown, Eye, EyeOff, Trash2, LogOut } from 'lucide-react';
 
@@ -14,9 +15,10 @@ interface ActiveUsersListProps {
     toggleInvisible: () => void;
     userProfile: UserProfile;
     isRestoringSession?: boolean;
-    isProjectAuthor?: boolean; // Is current user the project author
+    currentUserRole?: string; // Replaces isProjectAuthor for more granular control
     onRemoveUser?: (accessId: string, userName: string) => void; // Callback to remove user
     onLeaveRoom?: (accessId: string, userName: string) => void; // Callback for user to leave room
+    onChangeUserRole?: (userId: string, role: string) => void;
     roomAccessUsers?: RoomAccessUser[]; // List of users with access to room
     currentUserId?: string | null;
     mySocketId?: string | null;
@@ -24,18 +26,35 @@ interface ActiveUsersListProps {
 
 export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
     t, isConnected, connectedUsers, isUsersListOpen, setIsUsersListOpen, userProfile, isInvisible, toggleInvisible,
-    isProjectAuthor = false, onRemoveUser, onLeaveRoom, roomAccessUsers = [], currentUserId, mySocketId
+    currentUserRole, onRemoveUser, onLeaveRoom, onChangeUserRole, roomAccessUsers = [], currentUserId, mySocketId
 }) => {
     
     // All hooks must be at the top, before any conditional returns
-    const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
+    const [contextMenuCtx, setContextMenuCtx] = useState<{
+        u: typeof displayUsers[0];
+        x: number;
+        y: number;
+        canRemove: boolean;
+        canChangeRole: boolean;
+        canLeave: boolean;
+        accessId: string;
+    } | null>(null);
+
+    useEffect(() => {
+        const handleClickOutside = () => setContextMenuCtx(null);
+        if (contextMenuCtx) window.addEventListener('click', handleClickOutside);
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, [contextMenuCtx]);
     
     // Process Users List
     const displayUsers = useMemo(() => {
         // If empty (loading or no users), return empty
         if (!connectedUsers || connectedUsers.length === 0) return [];
+        
+        const myRole = (currentUserRole || '').toLowerCase();
+        const isOwner = myRole === 'owner' || myRole === 'host';
+        const isAdmin = myRole === 'admin';
 
-        const myUserId = currentUserId || localStorage.getItem('my_user_id');
         const myName = userProfile.name;
         
         return connectedUsers.map(u => {
@@ -44,6 +63,9 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
             // Priority 2: User ID Match (If authenticated)
             // Priority 3: Name Match (Legacy/Fallback)
             
+            const myUserId = currentUserId || localStorage.getItem('my_user_id');
+            const myName = userProfile.name;
+
             const isMe = (mySocketId && u.socketId === mySocketId) ||
                          (myUserId && u.userId && u.userId.toString() === myUserId.toString()) || 
                          (!u.userId && u.name === myName);
@@ -58,8 +80,10 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
             switch (rawRole) {
                 case UserRoleType.HOST:
                 case UserRoleType.OWNER:
-                case UserRoleType.ADMIN:
                     roleBadge = t('role.host');
+                    break;
+                case UserRoleType.ADMIN:
+                    roleBadge = 'Admin'; // Differentiate Admin from Host
                     break;
                 case UserRoleType.EDITOR:
                 case UserRoleType.RW:
@@ -85,8 +109,10 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                      const fallbackRole = accessUser.role.toLowerCase();
                      switch (fallbackRole) {
                         case 'host':
-                        case 'admin':
                              roleBadge = t('role.host');
+                             break;
+                        case 'admin':
+                             roleBadge = 'Admin';
                              break;
                         case 'editor':
                              roleBadge = t('role.editor');
@@ -100,8 +126,8 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
 
             // Priority 3: Fallback specific checks
             if (!roleBadge) {
-                if (isMe && isProjectAuthor) {
-                     roleBadge = '(Host)';
+                if (isMe && isOwner) { // check currentUserRole instead of isProjectAuthor
+                     roleBadge = t('role.host');
                 } else if (!u.userId) { // No User ID means not logged in 
                     roleBadge = '(Guest)'; // Explicitly guest
                 } else {
@@ -156,7 +182,7 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                 t.name === user.name && t.color === user.color
             ));
         });
-    }, [connectedUsers, userProfile.name, roomAccessUsers, isProjectAuthor, currentUserId, mySocketId]);
+    }, [connectedUsers, userProfile.name, roomAccessUsers, currentUserRole, currentUserId, mySocketId]);
 
     // Get access ID for a user to enable removal
     const getAccessIdForUser = (userName: string): string | null => {
@@ -189,14 +215,45 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                             displayUsers.map(u => {
                                 const accessId = u.accessUser ? u.accessUser.accessId : getAccessIdForUser(u.name);
                                 
-                                // CAN REMOVE: Am I author? Is target NOT me? Do we have access ID?
-                                const canRemove = isProjectAuthor && !u.isMe && !!accessId;
+                                const myRole = (currentUserRole || '').toLowerCase();
+                                const isOwner = myRole === 'owner' || myRole === 'host';
+                                const isAdmin = myRole === 'admin';
+                                
+                                // Robust Target Role Resolution
+                                // 1. Check direct socket role (authoritative for live presence)
+                                // 2. Check access list role
+                                // 3. Fallback to viewer
+                                let targetRole = (u.role || u.accessUser?.role || 'viewer').toLowerCase();
+                                if (targetRole === 'r') targetRole = 'viewer';
+                                if (targetRole === 'rw') targetRole = 'editor';
+                                
+                                const isTargetOwner = targetRole === 'owner' || targetRole === 'host' || u.roleBadge === '(Host)' || u.roleBadge === t('role.host');
+                                const isTargetAdmin = targetRole === 'admin' || u.roleBadge === 'Admin';
+                                const isTargetMe = u.isMe || (currentUserId && u.userId === currentUserId);
+
+                                // CAN REMOVE: 
+                                // Owner can remove anyone (except themselves).
+                                // Admin can remove Editors/Viewers/Admins (but NOT Owner).
+                                const canRemove = !isTargetMe && !!accessId && (
+                                    isOwner || 
+                                    (isAdmin && !isTargetOwner)
+                                );
+
+                                // CAN CHANGE ROLE: 
+                                // Owner can change all (except self).
+                                // Admin can change others (except Owner).
+                                const canChangeRole = !isTargetMe && !!u.accessUser?.userId && !!onChangeUserRole && (
+                                    isOwner ||
+                                    (isAdmin && !isTargetOwner)
+                                );
 
                                 // CAN LEAVE: Is target ME? Am I NOT the host (Host cannot leave, must delete room)? Do I have access ID?
-                                const isHost = u.roleBadge === '(Host)';
-                                const canLeave = u.isMe && !isHost && !!accessId;
+                                const isHostBadge = u.roleBadge === '(Host)' || u.roleBadge === t('role.host');
+                                const canLeave = isTargetMe && !isHostBadge && !!accessId;
 
-                                const showMenu = (canRemove || canLeave);
+                                // Show menu if we have access ID (meaning user is part of the room formally)
+                                // We might show disabled options, but we want the menu to be renderable for status inspection.
+                                const showMenu = !!accessId && (isOwner || isAdmin || isTargetMe || canLeave); 
                                 
                                 return (
                                     <div key={u.id} className={`relative flex items-center justify-between text-xs p-1.5 rounded border border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700`}>
@@ -229,44 +286,22 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            setExpandedMenu(expandedMenu === u.id ? null : u.id as string);
+                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                            setContextMenuCtx(contextMenuCtx?.u?.id === u.id ? null : {
+                                                                u,
+                                                                x: rect.right,
+                                                                y: rect.bottom,
+                                                                canRemove,
+                                                                canChangeRole,
+                                                                canLeave,
+                                                                accessId
+                                                            });
                                                         }}
                                                         className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 focus:outline-none transition p-0.5"
                                                         title="User options"
                                                     >
-                                                        <ChevronDown size={12} className={`transition-transform ${expandedMenu === u.id ? 'rotate-180' : ''}`} />
+                                                        <ChevronDown size={12} className={`transition-transform ${contextMenuCtx?.u?.id === u.id ? 'rotate-180' : ''}`} />
                                                     </button>
-                                                    
-                                                    {expandedMenu === u.id && (
-                                                        <div className="absolute right-0 mt-1 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded shadow-lg z-10 min-w-[120px]">
-                                                            {canRemove && (
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        onRemoveUser?.(accessId, u.name);
-                                                                        setExpandedMenu(null);
-                                                                    }}
-                                                                    className="flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 w-full text-left transition border-b border-gray-100 dark:border-gray-800 last:border-0"
-                                                                >
-                                                                    <Trash2 size={12} />
-                                                                    {t('delete')}
-                                                                </button>
-                                                            )}
-                                                            {canLeave && (
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        onLeaveRoom?.(accessId, u.name);
-                                                                        setExpandedMenu(null);
-                                                                    }}
-                                                                    className="flex items-center gap-2 px-3 py-2 text-xs text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 w-full text-left transition"
-                                                                >
-                                                                    <LogOut size={12} />
-                                                                    {t('Leave Room') || "Leave Room"}
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -279,6 +314,82 @@ export const ActiveUsersList: React.FC<ActiveUsersListProps> = ({
                              </div>
                         )}
                 </div>
+            )}
+
+            {contextMenuCtx && createPortal(
+                <div 
+                     style={{ 
+                         top: contextMenuCtx.y, 
+                         left: contextMenuCtx.x - 140, 
+                         position: 'absolute'
+                     }}
+                     className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded shadow-lg z-[9999] min-w-[140px] py-1 animate-in fade-in zoom-in duration-200"
+                >
+                     {contextMenuCtx.u.accessUser && (
+                        <>
+                            <div className="px-3 py-1.5 text-[10px] text-gray-400 font-bold uppercase tracking-wider bg-gray-50/50 dark:bg-slate-800/50 border-b border-gray-100 dark:border-slate-800">
+                                {t('Role') || 'Role'}
+                            </div>
+                            {['Viewer', 'Editor', 'Admin'].map(role => {
+                                    const isCurrent = contextMenuCtx.u.accessUser?.role === role;
+                                    const disabled = !contextMenuCtx.canChangeRole || isCurrent;
+                                    
+                                    return (
+                                    <button
+                                    key={role}
+                                    onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (!disabled) {
+                                            onChangeUserRole?.(contextMenuCtx.u.accessUser!.userId!, role);
+                                            setContextMenuCtx(null);
+                                            }
+                                    }}
+                                    disabled={disabled}
+                                    className={`flex items-center gap-2 px-3 py-1.5 text-xs w-full text-left transition
+                                        ${isCurrent 
+                                            ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/10 font-bold cursor-default' 
+                                            : disabled 
+                                                ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                                                : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-slate-800'}
+                                    `}
+                                    >
+                                    <span className="flex-1">{role}</span>
+                                    {isCurrent && <span className="text-[10px]">✓</span>}
+                                    </button>
+                                    );
+                            })}
+                            <div className="border-t border-gray-100 dark:border-slate-800 my-1"></div>
+                        </>
+                    )}
+
+                    {contextMenuCtx.canRemove && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveUser?.(contextMenuCtx.accessId, contextMenuCtx.u.name);
+                                setContextMenuCtx(null);
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 w-full text-left transition border-b border-gray-100 dark:border-gray-800 last:border-0"
+                        >
+                            <Trash2 size={12} />
+                            {t('delete')}
+                        </button>
+                    )}
+                    {contextMenuCtx.canLeave && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onLeaveRoom?.(contextMenuCtx.accessId, contextMenuCtx.u.name);
+                                setContextMenuCtx(null);
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 text-xs text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 w-full text-left transition"
+                        >
+                            <LogOut size={12} />
+                            {t('Leave Room') || "Leave Room"}
+                        </button>
+                    )}
+                </div>,
+                document.body
             )}
         </div>
     );

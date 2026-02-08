@@ -73,6 +73,7 @@ interface GraphContextType {
     acknowledgeSessionKicked: () => void;
     projectDeletedEvent: boolean;
     setProjectDeletedEvent: (val: boolean) => void;
+    lastAccessUpdate: number;
 }
 
 export interface GraphSnapshot {
@@ -412,6 +413,7 @@ export const GraphProvider = ({ children, initialProjectId, tabId }: { children:
     const [sessionConflict, setSessionConflict] = useState(false);
     const [sessionKicked, setSessionKicked] = useState(false);
     const [projectDeletedEvent, setProjectDeletedEvent] = useState(false); // <--- New State
+    const [lastAccessUpdate, setLastAccessUpdate] = useState(0);
 
     const acknowledgeSessionKicked = useCallback(() => {
         setSessionKicked(false);
@@ -543,6 +545,12 @@ export const GraphProvider = ({ children, initialProjectId, tabId }: { children:
              socket.on('comment:delete', handleCommentDelete);
              socket.on('history:add', handleHistoryAdd);
              socket.on('history:clear', handleHistoryClear);
+             socket.on('access:updated', (data: { userId: string, role: string }) => {
+                 setLastAccessUpdate(Date.now());
+                 if (data.userId === userId) {
+                     refreshProjects().catch(() => {});
+                 }
+             });
              socket.on('session:duplicate', (data: { message: string }) => {
                  console.warn("Duplicate session detected. Disconnecting.");
                  setLiveMode(false);
@@ -1716,7 +1724,8 @@ export const GraphProvider = ({ children, initialProjectId, tabId }: { children:
             userProfile, updateUserProfile, userId, currentUserEmail, mySocketId,
             sessionConflict, resolveSessionConflict,
             sessionKicked, acknowledgeSessionKicked,
-            tabId, projectDeletedEvent, setProjectDeletedEvent
+            tabId, projectDeletedEvent, setProjectDeletedEvent,
+            lastAccessUpdate
         }}>
             {children}
         </GraphContext.Provider>
