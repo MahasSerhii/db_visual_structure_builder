@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ISession extends Document {
     socketId: string;
-    roomId: string;
+    projectId: string; // Renamed from roomId
     userId?: mongoose.Types.ObjectId; // Stable ID to prevent duplicates
     userName?: string;
     userColor?: string;
@@ -13,7 +13,7 @@ export interface ISession extends Document {
 
 const SessionSchema: Schema = new Schema({
     socketId: { type: String, required: true, unique: true },
-    roomId: { type: String, required: true },
+    projectId: { type: String, required: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Changed to ObjectId
     userName: { type: String },
     userColor: { type: String },

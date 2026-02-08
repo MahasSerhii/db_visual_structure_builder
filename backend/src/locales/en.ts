@@ -23,7 +23,7 @@ export const en: Record<string, string> = {
 
     // Auth Controller
     "error.auth.email_exists": "Email is already registered.",
-    "error.auth.user_not_found": "User not found.",
+    "error.auth.user_not_found": "Account not found.",
     "error.auth.wrong_password": "Incorrect password.",
     "error.auth.forbidden": "Access Denied / Forbidden.",
     "error.auth.login_failed": "Login failed.",

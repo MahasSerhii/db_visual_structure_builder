@@ -37,7 +37,7 @@ const DELETED_ROOMS_KEY = 'deleted_rooms_cache';
 export const DataTab: React.FC = () => {
     const { 
         config, nodes, edges, comments, refreshData, isLiveMode, setLiveMode, setGraphData, 
-        currentRoomId, setCurrentRoomId, isReadOnly, setReadOnly, t, isAuthenticated, login, logout, 
+        currentProjectId, setCurrentProjectId, isReadOnly, setReadOnly, t, isAuthenticated, login, logout, 
         activeUsers, connectionStatus, setTransitioningToLive, updateConfig, updateProjectBackground,
         isUserVisible, toggleUserVisibility, userProfile, userId: currentUserId, currentUserEmail, mySocketId,
         sessionConflict, resolveSessionConflict,
@@ -49,8 +49,8 @@ export const DataTab: React.FC = () => {
     const { addTab, updateTab, activeTabId } = useWorkspace(); // <--- Destructured activeTabId
     // Initialize Local RoomID from Context if we are in Live Mode
     // FIXED: Do not fall back to localStorage 'last_active_room_id' to prevent new tabs from auto-connecting to old rooms
-    const [roomId, setRoomId] = useState(() => {
-        if (isLiveMode && currentRoomId) return currentRoomId;
+    const [projectId, setProjectId] = useState(() => {
+        if (isLiveMode && currentProjectId) return currentProjectId;
         
         // If we are in a Multi-Tab Workspace, we must NEVER read shared sessionStorage defaults
         // unless we are reloading exactly this session. 
@@ -60,7 +60,7 @@ export const DataTab: React.FC = () => {
         if (tabId) {
              // GraphContext already handled persistence via Props.
              // If GraphContext says we have a room, we use it. If not, we are empty.
-             return currentRoomId || '';
+             return currentProjectId || '';
         }
 
         // Check session storage first (current tab)
@@ -72,7 +72,7 @@ export const DataTab: React.FC = () => {
     const [isRestoringSession, setIsRestoringSession] = useState(() => {
         // Same logic: In Tab Mode, ignore shared session storage
         if (tabId) {
-             return !!currentRoomId; 
+             return !!currentProjectId; 
         }
         return !!(sessionStorage.getItem('room_id_session'));
     });
@@ -122,8 +122,8 @@ export const DataTab: React.FC = () => {
         } else {
              // Open in current tab
              setIsRestoringSession(true); 
-             setRoomId(project.id);
-             setCurrentRoomId(project.id);
+             setProjectId(project.id);
+             setCurrentProjectId(project.id);
              
              if (tabId) {
                   updateTab(tabId, { title: project.name });
@@ -133,7 +133,7 @@ export const DataTab: React.FC = () => {
     };
     
     const isProjectActive = (id: string, projectRoomId?: string) => {
-        return id === currentRoomId || (!!projectRoomId && projectRoomId === currentRoomId);
+        return id === currentProjectId || (!!projectRoomId && projectRoomId === currentProjectId);
     };
     
     const [isCSVModalOpen, setCSVModalOpen] = useState(false);
@@ -200,14 +200,14 @@ export const DataTab: React.FC = () => {
 
              // FIX: If global context confirms connection, force local UI state to match
              // This fixes issues where conflict resolution re-connects in backgound but UI stays on input screen
-             if (connectionStatus === 'connected' && currentRoomId && isLiveMode) {
+             if (connectionStatus === 'connected' && currentProjectId && isLiveMode) {
                  setIsConnected(true);
                  // Persistence Fix for Conflict Recovery:
                  // Ensure we re-save the session when connection is restored externally (e.g. via Conflict Modal)
-                 sessionStorage.setItem('room_id_session', currentRoomId);
+                 sessionStorage.setItem('room_id_session', currentProjectId);
              }
         }
-    }, [connectionStatus, setTransitioningToLive, currentRoomId, isLiveMode]);
+    }, [connectionStatus, setTransitioningToLive, currentProjectId, isLiveMode]);
 
 
     // Handle Link Auto-Connect & Token Ops
@@ -241,10 +241,12 @@ export const DataTab: React.FC = () => {
                 .then(data => {
                     if (data.valid) {
                          // Pre-set context data 
-                        if (data.roomId) {
-                            setRoomId(data.roomId);
-                            sessionStorage.setItem('room_id_session', data.roomId);
+                        if (data.projectId) { // Updated to projectId (ID)
+                            setProjectId(data.projectId);
+                            sessionStorage.setItem('room_id_session', data.projectId);
                         }
+                        // Legacy support removed
+                        
                         if (data.configStr) {
                              // Legacy configStr handling removed
                         }
@@ -302,7 +304,7 @@ export const DataTab: React.FC = () => {
             } catch { targetRoomId = roomParam; }
 
             setIsClientMode(true); 
-            setRoomId(targetRoomId);
+            setProjectId(targetRoomId);
 
             if (permParam === 'r') setReadOnly(true);
         }
@@ -313,7 +315,7 @@ export const DataTab: React.FC = () => {
     useEffect(() => {
         // Debounce slightly to ensure firebase/room state is settled
         const timer = setTimeout(() => {
-            if(roomId && !isConnected && !isConnecting) {
+            if(projectId && !isConnected && !isConnecting) {
                  const storedSessionRoom = sessionStorage.getItem('room_id_session');
                  // For multi-tab, avoid reading global `last_active_room_id` for auto-connect logic
                  // This prevents opening a new tab and having it auto-jump to the old room just because it's in localStorage
@@ -326,22 +328,22 @@ export const DataTab: React.FC = () => {
                  // FIXED: We now enforce isRestoringSession check to prevent auto-connection when user is just typing in the input
                  const shouldAutoConnect = isClientMode || (
                      isRestoringSession && (
-                        (!tabId && storedSessionRoom && storedSessionRoom === roomId) || // Standard Single-Tab restore
-                        (tabId && roomId) // Multi-Tab restore (roomId comes from GraphContext/Props)
+                        (!tabId && storedSessionRoom && storedSessionRoom === projectId) || // Standard Single-Tab restore
+                        (tabId && projectId) // Multi-Tab restore (projectId comes from GraphContext/Props)
                      )
                  );
 
                  // CHECK: If room is known to be deleted, skip connect and show modal
                  let isKnownDeleted = false;
-                 if (roomId) {
+                 if (projectId) {
                      try {
                          const deleted = JSON.parse(localStorage.getItem(DELETED_ROOMS_KEY) || '[]');
-                         if (deleted.includes(roomId)) isKnownDeleted = true;
+                         if (deleted.includes(projectId)) isKnownDeleted = true;
                      } catch { /* ignore */ }
                  }
 
                  if (isKnownDeleted) {
-                     console.log("Blocking auto-connect for known deleted room:", roomId);
+                     console.log("Blocking auto-connect for known deleted room:", projectId);
                      setProjectDeletedEvent(true);
                      setIsRestoringSession(false);
                      setIsConnecting(false);
@@ -350,13 +352,13 @@ export const DataTab: React.FC = () => {
 
                  if (shouldAutoConnect) {
                      const pref = sessionStorage.getItem('preferred_mode');
-                     console.log(`Auto-connecting to ${roomId}. Target: ${pref || 'live'}`);
+                     console.log(`Auto-connecting to ${projectId}. Target: ${pref || 'live'}`);
                      
                      // DELETED ROOM CHECK:
                      // Before auto-connecting, check if this room was recently deleted/kicked
                      const deletedCache = JSON.parse(localStorage.getItem(DELETED_ROOMS_KEY) || '[]');
-                     if (deletedCache.includes(roomId)) {
-                         console.warn("Blocking auto-connect for deleted room:", roomId);
+                     if (deletedCache.includes(projectId)) {
+                         console.warn("Blocking auto-connect for deleted room:", projectId);
                          setProjectDeletedEvent(true); // Trigger Modal
                          setIsRestoringSession(false);
                          return; // ABORT Connection
@@ -373,13 +375,13 @@ export const DataTab: React.FC = () => {
                  } else {
                      setIsRestoringSession(false);
                  }
-            } else if (!roomId) {
+            } else if (!projectId) {
                 setIsRestoringSession(false);
             }
         }, 300);
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [roomId, isClientMode, isConnected, isConnecting]);
+    }, [projectId, isClientMode, isConnected, isConnecting]);
 
 
 
@@ -432,7 +434,7 @@ export const DataTab: React.FC = () => {
                 },
                 body: JSON.stringify({
                     email: inviteEmail,
-                    roomId,
+                    projectId: projectId,
                     configStr: '', // Legacy/Removed
                     origin: window.location.origin + window.location.pathname,
                     permissions: linkAllowEdit ? 'rw' : 'r',
@@ -525,13 +527,13 @@ export const DataTab: React.FC = () => {
         }
     }, [isAuthenticated]);
 
-    const handleConnect = async (forceLiveMode: boolean = true, tokenOverride?: string, roomIdOverride?: string) => {
+    const handleConnect = async (forceLiveMode: boolean = true, tokenOverride?: string, projectIdOverride?: string) => {
         // Capture restore state before we potentially turn it off
         const wasRestoring = isRestoringSession;
         
-        const targetConnectRoomId = roomIdOverride || roomId;
+        const targetConnectProjectId = projectIdOverride || projectId;
 
-        if (!targetConnectRoomId) {
+        if (!targetConnectProjectId) {
             showToast(t('toast.room.missing'), "error");
             setIsRestoringSession(false);
             return;
@@ -567,7 +569,7 @@ export const DataTab: React.FC = () => {
         // If we are restoring a session and target mode is LOCAL, we skip network checks
         if (!isLive && isRestoringSession) {
              console.log(t('toast.restoring'));
-             setCurrentRoomId(roomId); 
+             setCurrentProjectId(projectId); 
              setLiveMode(false);
              setIsConnected(true);
              setIsRestoringSession(false);
@@ -619,22 +621,24 @@ export const DataTab: React.FC = () => {
         let role: 'host' | 'guest' = isClientMode ? 'guest' : 'host'; // Default
 
         // Verify Access & Role from Backend
-        if (effectiveToken && roomId) {
+        if (effectiveToken && targetConnectProjectId) {
             try {
                 // We should ideally await this, but handleConnect is already async.
-                console.log("[DataTab] Verifying access for room:", roomId);
-                const verification = await graphApi.verifyAccess({ token: effectiveToken, roomId });
+                console.log("[DataTab] Verifying access for room:", targetConnectProjectId);
+                const verification = await graphApi.verifyAccess({ token: effectiveToken, projectId: targetConnectProjectId });
                 console.log("[DataTab] Verification result:", verification);
                 
                 if (verification.allowed) {
-                    role = (verification.role as 'host' | 'guest') || role; // 'host' or 'guest' from DB
-                    // Correctly update UI Mode
-                    if (role === 'host') {
+                    const serverRole = verification.role?.toLowerCase() || 'guest';
+                    // We map 'admin' (backend) -> 'host' (frontend UI mode)
+                    if (serverRole === 'admin' || serverRole === 'host') {
+                         role = 'host';
                          setIsClientMode(false); 
                     } else {
+                         role = 'guest';
                          setIsClientMode(true);
                     }
-                    console.log(`Verified Access. Role: ${role}. Client Mode: ${role !== 'host'}`);
+                    console.log(`Verified Access. ServerRole: ${serverRole}. UI Role: ${role}. Client Mode: ${role !== 'host'}`);
                 } else if (verification.code === 'NO_ACCESS') {
                     // User doesn't have access to this room
                     setIsConnecting(false);
@@ -652,7 +656,7 @@ export const DataTab: React.FC = () => {
         // 404 Check / Create Project
         try {
             // Check Room Existence (Just peek)
-            await graphApi.getGraph(roomId); 
+            await graphApi.getGraph(targetConnectProjectId); 
         } catch (fetchErr) {
             const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
             // Check if it's an access denied error
@@ -676,13 +680,26 @@ export const DataTab: React.FC = () => {
                 return;
             }
             
-            if (msg && (msg.includes('404') || msg.includes('Project not found') || msg.includes('Cannot GET'))) {
+            if (msg && (
+                msg.includes('404') || 
+                msg.includes('Project not found') || 
+                msg.includes('Cannot GET') || 
+                msg.includes('Invalid Project ID format')
+            )) {
+                // Prevent infinite creation loops
+                if (projectIdOverride) {
+                    console.error("Failed to connect to newly created/specified project:", projectIdOverride);
+                    setIsConnecting(false);
+                    showToast("Failed to verify new project. Please try via the list.", "error");
+                    return;
+                }
+
                 // Zombie Room Fix: Do not auto-create if we are restoring a session (reload).
                 // Only create if user explicitly clicked Connect (wasRestoring is false).
                 if (wasRestoring) {
                      console.warn("Room not found during restore. Aborting.");
                      setIsConnecting(false);
-                     setCurrentRoomId(null);
+                     setCurrentProjectId(null);
                      sessionStorage.removeItem('room_id_session');
                      
                      // Clean URL
@@ -695,19 +712,18 @@ export const DataTab: React.FC = () => {
                      return;
                 }
 
-                console.log("Room not found, creating new room:", roomId);
+                console.log("Room not found, creating new room:", targetConnectProjectId);
                 try {
                     // Update: initGraph now returns the full project object including generated _id
                     const initRes = await graphApi.initGraph({ 
-                        roomId, // Legacy/Name hint
-                        name: `Project ${roomId}`,
+                        name: targetConnectProjectId,
                         config: {
                             canvasBg: config.canvasBg
                         }
                     });
 
                     const newId = initRes.project._id;
-                    const realGeneratedRoomId = initRes.project.roomId;
+                    const realGeneratedRoomId = initRes.project._id;
 
                     showToast(t('toast.room.created'), "success");
                     // Refresh Projects List
@@ -715,6 +731,10 @@ export const DataTab: React.FC = () => {
                     
                     // Restart connection flow with the CORRECT new ID
                     // We return here to stop execution of the current flow which is bound to the old invalid ID
+                    
+                    // Slight Delay to ensure Backend Consistency?
+                    await new Promise(r => setTimeout(r, 500)); 
+                    
                     return handleConnect(forceLiveMode, tokenOverride, newId);
                     
                 } catch(err) {
@@ -739,18 +759,18 @@ export const DataTab: React.FC = () => {
         }; */
 
         // Update Context to trigger Socket Connection & Data Loading
-        setCurrentRoomId(targetConnectRoomId);
+        setCurrentProjectId(targetConnectProjectId);
         setLiveMode(isLive);
 
         // Mark as Connected (Data will load via Context)
         setIsConnected(true); 
-        sessionStorage.setItem('room_id_session', targetConnectRoomId);
-        localStorage.setItem('last_active_room_id', targetConnectRoomId); // Persist across tabs
+        sessionStorage.setItem('room_id_session', targetConnectProjectId);
+        localStorage.setItem('last_active_room_id', targetConnectProjectId); // Persist across tabs
         sessionStorage.setItem('preferred_mode', isLive ? 'live' : 'local');
         setIsRestoringSession(false); 
 
         // Sync with Backend (Fire and Forget)
-        syncProjectWithBackend(targetConnectRoomId, role);
+        syncProjectWithBackend(targetConnectProjectId, role);
 
         // Clean Invite Token from URL if present
         const url = new URL(window.location.href);
@@ -780,9 +800,9 @@ export const DataTab: React.FC = () => {
         setIsClientMode(false); // Force exit client/auto mode
         setIsConnected(false);
         setLiveMode(false); 
-        setRoomId(''); // Crucial: Clear Room ID state
+        setProjectId(''); // Crucial: Clear Room ID state
         setLastSyncTime(null);
-        setCurrentRoomId(null);
+        setCurrentProjectId(null);
         // Note: We do NOT clear authToken here anymore, so user stays logged in
         
         // 3. Storage Cleanup
@@ -824,7 +844,7 @@ export const DataTab: React.FC = () => {
     const confirmDeleteDB = async () => {
          setIsDeleteConfirmOpen(false);
          
-         const targetId = projectToDelete || (isConnected && !isClientMode ? roomId : null);
+         const targetId = projectToDelete || (isConnected && !isClientMode ? projectId : null);
 
          // Helper for local wipe
          const wipeLocal = async () => {
@@ -842,7 +862,7 @@ export const DataTab: React.FC = () => {
                 showToast("Remote Project Deleted", "success");
                 
                 // If we deleted the CURRENT room, we must also wipe local/disconnect
-                if (isConnected && roomId === targetId) {
+                if (isConnected && projectId === targetId) {
                      await wipeLocal();
                 }
 
@@ -862,7 +882,10 @@ export const DataTab: React.FC = () => {
     };
 
     const handleCopyMagicLink = async () => {
-        if (!roomId) {
+        // Use currentProjectId from context if available (Active Session), fallback to input if not
+        const targetId = currentProjectId || projectId;
+        
+        if (!targetId) {
             showToast("Init Room ID first", "error");
             return;
         }
@@ -887,6 +910,9 @@ export const DataTab: React.FC = () => {
             
             showToast("Generating secure link...", "info");
             
+            // Find Project Name
+            const activeProjectName = savedProjects.find(p => p.id === targetId)?.name || 'Visual DB Project';
+            
             const res = await fetch(`${API_URL}/invite`, {
                 method: 'POST',
                 headers: { 
@@ -895,12 +921,12 @@ export const DataTab: React.FC = () => {
                 },
                 body: JSON.stringify({
                     email: inviteEmail,
-                    roomId,
+                    projectId: targetId,
                     configStr: '',
                     origin: window.location.origin + window.location.pathname,
                     permissions: linkAllowEdit ? 'rw' : 'r',
                     hostName: userProfile.name,
-                    projectName: 'Visual DB Project',
+                    projectName: activeProjectName,
                     skipEmail: true // Don't send email, just return link
                 })
             });
@@ -964,7 +990,7 @@ export const DataTab: React.FC = () => {
 
              try {
                  // Fetch data manually to check for conflicts (Cache-busted)
-                 const data = await graphApi.getGraph(`${roomId}?t=${Date.now()}`);
+                 const data = await graphApi.getGraph(`${projectId}?t=${Date.now()}`);
                  
                  const rNodes = data?.nodes || [];
                  const rEdges = data?.edges || [];
@@ -1025,7 +1051,7 @@ export const DataTab: React.FC = () => {
                      // No conflict, safe to sync
                      // Push local config if we are "winning" or it's empty
                      const projectConfig: ProjectConfig = { canvasBg: config.canvasBg };
-                     await graphApi.syncGraph(roomId, { nodes, edges, comments, config: projectConfig }, true);
+                     await graphApi.syncGraph(projectId, { nodes, edges, comments, config: projectConfig }, true);
                      showToast("Live Sync Enabled", "success");
                      setLiveMode(true);
                  }
@@ -1083,7 +1109,7 @@ export const DataTab: React.FC = () => {
         try {
             if (action === 'push_local') {
                 const projectConfig: ProjectConfig = { canvasBg: config.canvasBg };
-                await graphApi.syncGraph(roomId, { nodes, edges, comments, config: projectConfig }, true);
+                await graphApi.syncGraph(projectId, { nodes, edges, comments, config: projectConfig }, true);
                 showToast("Local data pushed to Live Room", "success");
             } else if (action === 'merge' && mergedData) {
                  const { nodes: n, edges: e, comments: c } = mergedData;
@@ -1095,7 +1121,7 @@ export const DataTab: React.FC = () => {
                  // 2. Push to Backend (Source of Truth)
                  // Critical: Ensure backend is updated BEFORE we go live to prevent stale data pull
                  const projectConfig: ProjectConfig = { canvasBg: config.canvasBg };
-                 await graphApi.syncGraph(roomId, { nodes: n, edges: e, comments: c, config: projectConfig }, true);
+                 await graphApi.syncGraph(projectId, { nodes: n, edges: e, comments: c, config: projectConfig }, true);
                  
                  showToast("Merged data synced successfully", "success");
 
@@ -1183,7 +1209,7 @@ export const DataTab: React.FC = () => {
                         // Retry once if needed? Or maybe the file was empty.
                     }
 
-                    await graphApi.syncGraph(roomId, { nodes: n, edges: e, comments: c }, true);
+                    await graphApi.syncGraph(projectId, { nodes: n, edges: e, comments: c }, true);
                     
                     // NOW refresh from server (which should contain the data we just pushed)
                     await refreshData(true);
@@ -1217,10 +1243,10 @@ export const DataTab: React.FC = () => {
                 setGraphData([], [], []);
             }
 
-            if (clearLive && isLiveMode && currentRoomId) {
+            if (clearLive && isLiveMode && currentProjectId) {
                 // Clear from backend (live room)
                 try {
-                    await graphApi.clearRoom(currentRoomId);
+                    await graphApi.clearRoom(currentProjectId);
 
                     // Refresh data from backend to reflect the clearing
                     await refreshData(true);
@@ -1241,15 +1267,15 @@ export const DataTab: React.FC = () => {
 
     // Fetch room access users (only for project author)
     const fetchRoomAccessUsers = React.useCallback(async () => {
-        if (!isLiveMode || !currentRoomId || isClientMode) return;
+        if (!isLiveMode || !currentProjectId || isClientMode) return;
 
         try {
-            const data = await graphApi.getAccess(currentRoomId);
+            const data = await graphApi.getAccess(currentProjectId);
             setRoomAccessUsers(data.users || []);
         } catch (err) {
             console.error("Failed to fetch room access users", err);
         }
-    }, [isLiveMode, currentRoomId, isClientMode]);
+    }, [isLiveMode, currentProjectId, isClientMode]);
 
     // Handle removing user from room
     const handleRemoveUserFromRoom = async (accessId: string, userName: string) => {
@@ -1259,10 +1285,10 @@ export const DataTab: React.FC = () => {
 
     // Confirm and execute user removal
     const confirmRemoveUser = async () => {
-        if (!userToRemove || !currentRoomId) return;
+        if (!userToRemove || !currentProjectId) return;
 
         try {
-            await graphApi.removeAccess(currentRoomId, userToRemove.accessId);
+            await graphApi.removeAccess(currentProjectId, userToRemove.accessId);
             showToast(`${userToRemove.name} has been removed from the project`, "success");
             // Refresh the access list
             await fetchRoomAccessUsers();
@@ -1281,10 +1307,10 @@ export const DataTab: React.FC = () => {
     };
 
     const confirmLeaveRoom = async () => {
-        if (!userToRemove || !currentRoomId) return;
+        if (!userToRemove || !currentProjectId) return;
 
         try {
-            await graphApi.removeAccess(currentRoomId, userToRemove.accessId);
+            await graphApi.removeAccess(currentProjectId, userToRemove.accessId);
             showToast("You have left the room", "success");
             handleDisconnect();
         } catch (err) {
@@ -1298,10 +1324,10 @@ export const DataTab: React.FC = () => {
 
     // Fetch room access users when connected to live mode
     useEffect(() => {
-        if (isLiveMode && isConnected && currentRoomId && !isClientMode) {
+        if (isLiveMode && isConnected && currentProjectId && !isClientMode) {
             fetchRoomAccessUsers();
         }
-    }, [isLiveMode, isConnected, currentRoomId, isClientMode, fetchRoomAccessUsers]);
+    }, [isLiveMode, isConnected, currentProjectId, isClientMode, fetchRoomAccessUsers]);
 
     const handleOpenManageAccess = async (project: SavedProject) => {
         setSelectedProjectForAccess(project);
@@ -1347,10 +1373,10 @@ export const DataTab: React.FC = () => {
         setProjectDeletedEvent(false);
         // Persist deleted state to prevent phantom restores
         try {
-            if (currentRoomId) {
+            if (currentProjectId) {
                 const deleted = JSON.parse(localStorage.getItem(DELETED_ROOMS_KEY) || '[]');
-                if (!deleted.includes(currentRoomId)) {
-                    deleted.push(currentRoomId);
+                if (!deleted.includes(currentProjectId)) {
+                    deleted.push(currentProjectId);
                     localStorage.setItem(DELETED_ROOMS_KEY, JSON.stringify(deleted));
                 }
             }
@@ -1403,10 +1429,11 @@ export const DataTab: React.FC = () => {
                     isConnected={isConnected}
                     isRestoringSession={isRestoringSession}
                     isLiveMode={isLiveMode}
-                    roomId={roomId}
+                    projectId={projectId}
                     // Resolve distinct ID for display (Share Code) vs operation (Mongo ID)
-                    displayRoomId={savedProjects.find(p => p.id === currentRoomId)?.roomId}
-                    setRoomId={setRoomId}
+                    displayProjectId={savedProjects.find(p => p.id === currentProjectId)?.roomId}
+                    projectName={savedProjects.find(p => p.id === currentProjectId)?.name}
+                    setProjectId={setProjectId}
                     handleDeleteDB={handleDeleteDB}
                     handleDisconnect={onDisconnectClick}
                     showLoginUI={showLoginUI}

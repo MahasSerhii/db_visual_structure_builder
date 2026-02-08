@@ -16,7 +16,7 @@ interface CSVModalProps {
 }
 
 export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
-    const { nodes, edges, refreshData, isReadOnly, t, isLiveMode, currentRoomId  } = useGraph();
+    const { nodes, edges, refreshData, isReadOnly, t, isLiveMode, currentProjectId  } = useGraph();
 
     const { showToast } = useToast();
     const [importFile, setImportFile] = useState<File | null>(null);
@@ -124,7 +124,7 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
         // If in Live Mode, push to remote
         if (isLiveMode) {
             try {
-                if (!currentRoomId) {
+                if (!currentProjectId) {
                       return  console.error("Room id is not exists");
                   }
                  // Push everything including potentially empty comments if not imported
@@ -148,8 +148,8 @@ export const CSVModal: React.FC<CSVModalProps> = ({ isOpen, onClose }) => {
                  
                  // Retrieve comments to push
                  const currentComments = await dbOp('comments', 'readonly', 'getAll') as Comment[];
-                 if (currentRoomId) {
-                     await graphApi.syncGraph(currentRoomId, {
+                 if (currentProjectId) {
+                     await graphApi.syncGraph(currentProjectId, {
                         nodes: newNodes,
                         edges: newEdges,
                         comments: currentComments

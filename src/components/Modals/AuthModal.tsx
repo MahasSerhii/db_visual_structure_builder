@@ -100,7 +100,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                 });
                 
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || t('auth.error.register_failed'));
+                if (!res.ok) throw new Error(data.message || data.error || t('auth.error.register_failed'));
                 
                 if (data.success && !data.token) {
                     setSuccessMsg(data.message || t('auth.success.register'));
@@ -116,7 +116,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                 });
 
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || t('auth.error.login_failed'));
+                if (!res.ok) {
+                    // Use server message if available
+                    throw new Error(data.message || data.error || t('auth.error.login_failed'));
+                }
                 
                 onSuccess(data.token, data.user.email, data.user.name, data.projects, data.user);
             } else if (mode === 'FORGOT_PASSWORD') {
@@ -126,7 +129,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                     body: JSON.stringify({ email, origin: window.location.origin + window.location.pathname })
                 });
                 const data = await res.json();
-                 if (!res.ok) throw new Error(data.error || t('auth.error.request_failed'));
+                 if (!res.ok) throw new Error(data.message || data.error || t('auth.error.request_failed'));
                  setSuccessMsg(t('auth.success.request'));
             } else if (mode === 'RESET_PASSWORD') {
                 if (password !== repeatPassword) throw new Error(t('auth.error.mismatch'));
@@ -137,7 +140,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialSt
                     body: JSON.stringify({ token: resetToken, newPassword: password })
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || t('auth.error.reset_failed'));
+                if (!res.ok) throw new Error(data.message || data.error || t('auth.error.reset_failed'));
                 
                 setSuccessMsg(t('auth.success.reset'));
                 

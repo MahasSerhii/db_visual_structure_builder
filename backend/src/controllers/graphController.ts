@@ -47,7 +47,7 @@ export const getGraph = catchAsync(async (req: AuthRequest, res: Response) => {
             comments: cleanComments,
             project: {
                 _id: req.project._id,
-                roomId: req.project.roomId,
+                projectId: req.project._id.toString(), // Unified ID
                 name: req.project.name,
                 role: req.role,
                 config: config,
@@ -313,11 +313,14 @@ export const deleteComment = catchAsync(async (req: AuthRequest, res: Response) 
 });
 
 export const clearGraph = catchAsync(async (req: AuthRequest, res: Response) => {
-    const { roomId } = req.body;
+    const { projectId: reqProjectId } = req.body;
 
-    if (!roomId) throw new BadRequestException(t(req.user?.language, "error.graph.room_required"));
+    if (!reqProjectId) throw new BadRequestException(t(req.user?.language, "error.graph.room_required"));
 
-    const project = await Project.findOne({ roomId, isDeleted: false });
+    let project = null;
+    if (mongoose.isValidObjectId(reqProjectId)) {
+        project = await Project.findOne({ _id: reqProjectId, isDeleted: false });
+    }
 
     if (!project) throw new NotFoundException(t(req.user?.language, "error.graph.project_not_found"));
     

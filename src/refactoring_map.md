@@ -70,4 +70,4 @@
 ### 8. `src/context/GraphContext.tsx`
 **Responsible for:** Global state (nodes, edges, user, settings).
 **Original Code Relations:**
-- JS Variables: `nodes`, `edges`, `currentLang`, `myUserId`, `currentRoomId`
+- JS Variables: `nodes`, `edges`, `currentLang`, `myUserId`, `currentProjectId`

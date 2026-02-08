@@ -29,7 +29,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
     const svgRef = useRef<SVGSVGElement>(null);
     const gRef = useRef<SVGGElement>(null);
     const simulationRef = useRef<d3.Simulation<D3Node, undefined> | null>(null);
-    const { nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, addComment, updateComment, deleteComment, config, activeCommentId, setActiveCommentId, currentRoomId, updateProjectBackground, userProfile } = useGraph();
+    const { nodes, edges, comments, updateNode, updateEdge, addEdge, deleteEdge, addComment, updateComment, deleteComment, config, activeCommentId, setActiveCommentId, currentProjectId, updateProjectBackground, userProfile } = useGraph();
     const { showToast } = useToast();
     const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
     
@@ -200,7 +200,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         if (!svgRef.current || !gRef.current) return;
         const svg = d3.select(svgRef.current);
         const g = d3.select(gRef.current);
-        const roomKey = currentRoomId || 'local';
+        const roomKey = currentProjectId || 'local';
 
         const zoom = d3.zoom<SVGSVGElement, unknown>()
             .scaleExtent([0.1, 4])
@@ -245,7 +245,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({ onNodeClick, isComment
         simulationRef.current = sim;
         
         return () => { sim.stop(); };
-    }, [currentRoomId]); // Re-init on room switch to restore room-specific zoom
+    }, [currentProjectId]); // Re-init on room switch to restore room-specific zoom
 
     useEffect(() => {
         if (!simulationRef.current || !gRef.current) return;

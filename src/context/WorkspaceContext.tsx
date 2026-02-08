@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, ReactNode, useCallback } fr
 
 export interface TabData {
     id: string;
-    roomId: string | null; // null = New Tab / Local only?
+    projectId: string | null; // null = New Tab / Local only?
     title: string;
     type: 'graph';
     isLive?: boolean; 
@@ -12,11 +12,11 @@ export interface TabData {
 interface WorkspaceContextType {
     tabs: TabData[];
     activeTabId: string;
-    addTab: (roomId?: string, title?: string) => void;
+    addTab: (projectId?: string, title?: string) => void;
     closeTab: (id: string) => void;
     setActiveTabId: (id: string) => void;
     updateTab: (id: string, data: Partial<TabData>) => void;
-    getTabByRoomId: (roomId: string) => TabData | undefined;
+    getTabByProjectId: (projectId: string) => TabData | undefined;
     reorderTabs: (newOrder: TabData[]) => void;
 }
 
@@ -46,13 +46,13 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
                 // Let's decide: If URL is present, start FRESH with that room (Link Sharing UX).
                 // But if we want to preserve previous tabs, we could append.
                 // Standard UX for "Open Link": Open that link.
-                let targetRoomId = roomParam;
+                let targetProjectId = roomParam;
                  try {
                     const decodedRoom = atob(roomParam);
-                    if (/^[\x20-\x7E]+$/.test(decodedRoom)) targetRoomId = decodedRoom;
+                    if (/^[\x20-\x7E]+$/.test(decodedRoom)) targetProjectId = decodedRoom;
                 } catch { /* ignore */ }
 
-                return [{ id: 'tab-1', roomId: targetRoomId, title: `Room ${targetRoomId.slice(-4)}`, type: 'graph' }];
+                return [{ id: 'tab-1', projectId: targetProjectId, title: `Project ${targetProjectId.slice(-4)}`, type: 'graph' }];
             }
 
             // Priority 2: LocalStorage Restore
@@ -66,7 +66,7 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
         } catch (e) {
             console.error("Failed to load workspace tabs", e);
         }
-        return [{ id: 'tab-1', roomId: null, title: 'New Tab', type: 'graph' }];
+        return [{ id: 'tab-1', projectId: null, title: 'New Tab', type: 'graph' }];
     });
 
     // Initialize Active Tab from LocalStorage
@@ -98,10 +98,10 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
         localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
     }, [tabs, activeTabId]);
 
-    const addTab = useCallback((roomId: string | null = null, title: string = 'New Tab') => {
+    const addTab = useCallback((projectId: string | null = null, title: string = 'New Tab') => {
         const newTab: TabData = {
             id: `tab-${Date.now()}`,
-            roomId,
+            projectId,
             title,
             type: 'graph'
         };
@@ -118,7 +118,7 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
             }
             if (newTabs.length === 0) {
                 // Always keep one tab?
-                return [{ id: `tab-${Date.now()}`, roomId: null, title: 'New Tab', type: 'graph' }];
+                return [{ id: `tab-${Date.now()}`, projectId: null, title: 'New Tab', type: 'graph' }];
             }
             return newTabs;
         });
@@ -128,8 +128,8 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
         setTabs(prev => prev.map(t => t.id === id ? { ...t, ...data } : t));
     }, []);
 
-    const getTabByRoomId = useCallback((roomId: string) => {
-        return tabs.find(t => t.roomId === roomId);
+    const getTabByProjectId = useCallback((projectId: string) => {
+        return tabs.find(t => t.projectId === projectId);
     }, [tabs]);
 
     const reorderTabs = useCallback((newOrder: TabData[]) => {
@@ -144,7 +144,7 @@ export const WorkspaceProvider: React.FC<{ children: ReactNode }> = ({ children 
             closeTab,
             setActiveTabId,
             updateTab,
-            getTabByRoomId,
+            getTabByProjectId,
             reorderTabs
         }}>
             {children}

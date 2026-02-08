@@ -46,7 +46,7 @@ export const UpdateProfileRequestSchema = z.object({
 
 export const GraphProjectSchema = z.object({
     _id: z.string(),
-    roomId: z.string(),
+    // roomId: z.string(), // Removed
     name: z.string(),
     ownerId: z.string(),
     role: z.string().optional(),
@@ -83,7 +83,7 @@ export const SaveProjectRequestSchema = z.object({
 
 export const VerifyAccessRequestSchema = z.object({
     token: z.string(),
-    roomId: z.string()
+    projectId: z.string()
 });
 
 export const VerifyAccessResponseSchema = z.object({

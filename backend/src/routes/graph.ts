@@ -43,7 +43,7 @@ router.put('/:projectId/access', authenticate, checkAccess([UserRole.ADMIN, User
 router.delete('/:projectId/access/:targetUserId', authenticate, checkAccess([UserRole.ADMIN, UserRole.EDITOR]), accessController.removeAccess);
 
 // Project
-router.delete('/:roomId', authenticate, checkAccess([UserRole.ADMIN]), projectController.deleteProject);
+router.delete('/:projectId', authenticate, checkAccess([UserRole.ADMIN]), projectController.deleteProject);
 router.put('/:projectId/background', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), projectController.updateProjectBackground);
 router.put('/:projectId/config', authenticate, checkAccess([UserRole.EDITOR, UserRole.ADMIN]), projectController.updateProjectConfig);
 

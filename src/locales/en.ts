@@ -328,7 +328,7 @@ export const en: Record<string, string> = {
     "user.removeConfirm": "Remove User",
     "user.removeMessage": "Are you sure you want to remove this user from the room?",
     "user.removeTitle": "Remove User",
-    "data.ph.roomId": "Enter Room Name",
+    "data.ph.projectId": "Enter Project Name",
     "data.btn.connect": "Connect / Create",
 
     // Errors

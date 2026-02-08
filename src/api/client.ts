@@ -54,7 +54,9 @@ class ApiClient {
                 throw new ApiError(res.status, errorData.code, errorData.message);
             }
             
-            throw new ApiError(res.status, 'INTERNAL_ERROR', errorData.message || 'Unknown Error');
+            // Handle legacy/simple error format { error: "msg" }
+            const msg = errorData.message || errorData.error || 'Unknown Error';
+            throw new ApiError(res.status, 'INTERNAL_ERROR', msg);
         }
         return res.json();
     }

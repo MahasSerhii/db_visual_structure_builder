@@ -28,8 +28,8 @@ export const createProject = catchAsync(async (req: AuthRequest, res: Response) 
     const generatedRoomId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
     const project = await Project.create({
-        roomId: generatedRoomId, // Unique random ID
-        name: name || `Project ${generatedRoomId}`,
+        roomId: generatedRoomId, // Unique random ID for display
+        name: name || `Project ${new Date().toLocaleDateString()}`,
         ownerId: req.user?._id,
         config: config
     });
@@ -61,12 +61,12 @@ export const deleteProject = catchAsync(async (req: AuthRequest, res: Response) 
     await Comment.deleteMany({ projectId });
     await History.deleteMany({ projectId });
     await Access.updateMany({ projectId }, { isDeleted: true }); 
-    await Session.deleteMany({ roomId: project.roomId }); 
+    await Session.deleteMany({ projectId: project._id.toString() }); 
 
     project.isDeleted = true;
     await project.save();
     
-    getIO().to(project.roomId).emit('room:deleted');
+    getIO().to(project._id.toString()).emit('project:deleted');
     
     res.json({ success: true });
 });
@@ -128,7 +128,7 @@ export const saveProject = catchAsync(async (req: AuthRequest, res: Response) =>
             const generatedRoomId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
             project = await Project.create({
                 roomId: generatedRoomId,
-                name: pData.name || `Project ${generatedRoomId}`,
+                name: pData.name || `Project ${new Date().toLocaleDateString()}`,
                 ownerId: req.user._id,
                 config: {}
             });

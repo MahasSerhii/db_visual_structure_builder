@@ -10,9 +10,10 @@ interface RoomConnectionSectionProps {
     isConnected: boolean;
     isRestoringSession: boolean;
     isLiveMode: boolean;
-    roomId: string; // This is the ID used for operations (or input)
-    displayRoomId?: string; // This is the ID to show to the user (e.g. share code)
-    setRoomId: (val: string) => void;
+    projectId: string; // This is the ID used for operations (or input)
+    displayProjectId?: string; // This is the ID to show to the user (e.g. share code)
+    projectName?: string;
+    setProjectId: (val: string) => void;
     handleDeleteDB: () => void;
     handleDisconnect: () => void;
     showLoginUI: boolean;
@@ -30,7 +31,7 @@ interface RoomConnectionSectionProps {
 }
 
 export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
-    t, isClientMode, isConnected, isRestoringSession, isLiveMode, roomId, displayRoomId, setRoomId,
+    t, isClientMode, isConnected, isRestoringSession, isLiveMode, projectId, displayProjectId, projectName, setProjectId,
     handleDeleteDB, handleDisconnect, isConnecting, connectionStatus, handleConnect, toggleLiveMode, lastSyncTime,
     isAuthenticated, onOpenAuthModal
 }) => {
@@ -42,12 +43,12 @@ export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
     const isLiveFailed = isLiveMode && connectionStatus === 'failed';
     
     // Prefer showing the display ID (Share Code) if available, otherwise fallback to known ID
-    const visibleRoomId = displayRoomId || roomId;
+    const visibleProjectId = displayProjectId || projectId;
 
     // UI State
 
-    const copyRoomId = () => {
-        navigator.clipboard.writeText(visibleRoomId);
+    const copyProjectId = () => {
+        navigator.clipboard.writeText(visibleProjectId);
         showToast(t('toast.copied'), 'success');
     };
 
@@ -131,9 +132,15 @@ export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
                         <div className='flex gap-2'>
                             {/* Room Info */}
                             <div className="flex-1 text-xs px-3 py-2.5 bg-white border border-indigo-100 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all shadow-sm dark:bg-slate-900 dark:text-slate-200 dark:placeholder-slate-500">
-                                <div className="flex items-center gap-2 overflow-hidden">
-                                    <code className="text-[10px] font-mono text-slate-600 dark:text-slate-300 truncate" title={visibleRoomId}>
-                                        {isClientMode ? "READ-ONLY LINKS" : visibleRoomId}
+                                <div className="flex flex-col gap-0.5 overflow-hidden">
+                                     <div className="flex items-center gap-1.5 overflow-hidden" title={projectName || t('project.unnamed')}>
+                                        <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800/50">Room</span>
+                                        <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                                            {projectName || (displayProjectId ? `Project ${displayProjectId.substr(0, 6)}` : t('project.unnamed'))}
+                                        </span>
+                                     </div>
+                                    <code className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate pl-0.5" title={visibleProjectId}>
+                                        ID: {visibleProjectId}
                                     </code>
                                 </div>
                             </div>
@@ -185,16 +192,16 @@ export const RoomConnectionSection: React.FC<RoomConnectionSectionProps> = ({
             <div className="relative group">
                 <input
                     type="text"
-                    value={roomId}
-                    onChange={e => setRoomId(e.target.value)}
-                    placeholder={t('data.ph.roomId')}
+                    value={projectId}
+                    onChange={e => setProjectId(e.target.value)}
+                    placeholder={t('data.ph.projectId')}
                     className="w-full pl-4 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all shadow-sm group-hover:border-indigo-300 dark:group-hover:border-indigo-700 text-slate-800 dark:text-slate-200"
                 />
             </div>
 
             <button
                 onClick={() => handleConnect(true)}
-                disabled={isConnecting || !roomId}
+                disabled={isConnecting || !projectId}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white py-3 rounded-xl font-bold shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2 text-sm"
             >
                 {isConnecting ? (

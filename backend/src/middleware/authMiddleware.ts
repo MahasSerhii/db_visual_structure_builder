@@ -45,20 +45,19 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
 // Middleware to check project access
 export const checkAccess = (roleRequired: UserRole[] = [UserRole.VIEWER, UserRole.EDITOR, UserRole.ADMIN]) => {
     return async (req: AuthRequest, res: Response, next: NextFunction) => {
-        // Support BOTH projectId and roomId parameter names
-        const projectIdStr = req.params.projectId || req.params.roomId;
+        // Support projectId 
+        const projectIdStr = req.params.projectId;
 
         try {
-            // Find by _id (preferred) or by properties.roomId (legacy/fallback if string is not ObjectId)
+            // Find by _id ONLY
             let project: IProject | null = null;
             
             if (mongoose.isValidObjectId(projectIdStr)) {
-                 project = await Project.findById(projectIdStr);
-            } 
-            
-            if (!project) {
-                 // Try finding by custom roomId 
-                 project = await Project.findOne({ roomId: projectIdStr });
+                 project = await Project.findOne({ _id: projectIdStr, isDeleted: false });
+            } else {
+                // If it's not a valid ObjectId, it cannot be a project _id.
+                // we treat this as not found immediately.
+                return res.status(404).json({ error: "Invalid Project ID format" });
             }
 
             if (!project) return res.status(404).json({ error: "Project not found" });

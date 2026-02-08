@@ -25,29 +25,29 @@ export const ProjectSession: React.FC<{ tabId?: string }> = ({ tabId }) => {
     const { 
         updateNode, deleteNode, nodes, comments, config, updateConfig, userProfile,
         t, isAuthenticated, login, isLoading, connectionStatus, retryConnection, 
-        isLiveMode, setLiveMode, isTransitioningToLive, currentRoomId, savedProjects
+        isLiveMode, setLiveMode, isTransitioningToLive, currentProjectId, savedProjects
     } = useGraph(); 
     
     // Sync Room ID and Title to Workspace Tab
     const { updateTab } = useWorkspace();
     
     useEffect(() => {
-        if (tabId && currentRoomId) {
+        if (tabId && currentProjectId) {
              // Find project name if possible
-             const project = savedProjects.find(p => p.id === currentRoomId);
+             const project = savedProjects.find(p => p.id === currentProjectId);
              
-             let title = currentRoomId; 
+             let title = currentProjectId; 
              if (project) {
                  // Remove "Project" prefix if present (case insensitive)
                  title = project.name.replace(/^Project\s+/i, '');
              }
              
              updateTab(tabId, { 
-                 roomId: currentRoomId,
+                 projectId: currentProjectId,
                  title: title
              });
         }
-    }, [tabId, currentRoomId, updateTab, savedProjects]);
+    }, [tabId, currentProjectId, updateTab, savedProjects]);
 
      const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
     const [isEditModalOpen, setEditModalOpen] = useState(false);

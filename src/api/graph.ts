@@ -10,32 +10,32 @@ import {
 import { NodeData, EdgeData, Comment, RoomAccessUser, ProjectConfig } from '../utils/types';
 
 export const graphApi = {
-    getGraph: (roomId: string) => {
-        return apiClient.get<GraphDataResponse>(`/graph/${roomId}`);
+    getGraph: (projectId: string) => {
+        return apiClient.get<GraphDataResponse>(`/graph/${projectId}`);
     },
 
-    initGraph: (data: { roomId?: string, name?: string, isPublic?: boolean, config?: ProjectConfig }) => {
-        return apiClient.post<{ success: boolean, project: { _id: string, roomId: string, name: string } }>('/graph/init', data);
+    initGraph: (data: { name?: string, isPublic?: boolean, config?: ProjectConfig }) => {
+        return apiClient.post<{ success: boolean, project: { _id: string, name: string } }>('/graph/init', data);
     },
 
-    deleteGraph: (roomId: string) => {
-        return apiClient.delete<ApiResponse>(`/graph/${roomId}`);
+    deleteGraph: (projectId: string) => {
+        return apiClient.delete<ApiResponse>(`/graph/${projectId}`);
     },
 
-    syncGraph: (roomId: string, data: SyncGraphRequest, replace: boolean = false) => {
-        return apiClient.post<ApiResponse>(`/graph/${roomId}/sync?replace=${replace}`, data);
+    syncGraph: (projectId: string, data: SyncGraphRequest, replace: boolean = false) => {
+        return apiClient.post<ApiResponse>(`/graph/${projectId}/sync?replace=${replace}`, data);
     },
 
-    clearRoom: (roomId: string) => {
-        return apiClient.post<ApiResponse>('/graph/clear-room', { roomId });
+    clearRoom: (projectId: string) => {
+        return apiClient.post<ApiResponse>('/graph/clear-room', { projectId });
     },
 
-    getAccess: (roomId: string) => {
-        return apiClient.get<{ users: RoomAccessUser[] }>(`/graph/${roomId}/access`);
+    getAccess: (projectId: string) => {
+        return apiClient.get<{ users: RoomAccessUser[] }>(`/graph/${projectId}/access`);
     },
 
-    removeAccess: (roomId: string, accessId: string) => {
-        return apiClient.delete<ApiResponse>(`/graph/${roomId}/access/${accessId}`);
+    removeAccess: (projectId: string, accessId: string) => {
+        return apiClient.delete<ApiResponse>(`/graph/${projectId}/access/${accessId}`);
     },
 
     // Legacy/Other endpoints inferred from usage
@@ -43,7 +43,7 @@ export const graphApi = {
         return apiClient.post<ApiResponse>('/save-project', data);
     },
 
-    inviteUser: (data: { email: string, roomId: string, role: string, invitedBy: string }) => {
+    inviteUser: (data: { email: string, projectId: string, role: string, invitedBy: string }) => {
         return apiClient.post<ApiResponse>('/auth/invite', data);
     },
 
@@ -52,55 +52,55 @@ export const graphApi = {
     },
 
 
-    addNode: (roomId: string, node: NodeData) => {
-        return apiClient.put<ApiResponse>(`/graph/${roomId}/node`, { ...node, id: node.id });
+    addNode: (projectId: string, node: NodeData) => {
+        return apiClient.post<ApiResponse>(`/graph/${projectId}/node`, { ...node, id: node.id });
     },
 
-    updateNode: (roomId: string, node: NodeData) => {
-        return apiClient.put<ApiResponse>(`/graph/${roomId}/node`, { ...node, id: node.id });
+    updateNode: (projectId: string, node: NodeData) => {
+        return apiClient.put<ApiResponse>(`/graph/${projectId}/node/${node.id}`, { ...node, id: node.id });
     },
 
-    deleteNode: (roomId: string, nodeId: string) => {
-        return apiClient.delete<ApiResponse>(`/graph/${roomId}/node/${nodeId}`);
+    deleteNode: (projectId: string, nodeId: string) => {
+        return apiClient.delete<ApiResponse>(`/graph/${projectId}/node/${nodeId}`);
     },
 
-    addEdge: (roomId: string, edge: EdgeData) => {
-        return apiClient.put<ApiResponse>(`/graph/${roomId}/edge`, { ...edge, id: edge.id });
+    addEdge: (projectId: string, edge: EdgeData) => {
+        return apiClient.post<ApiResponse>(`/graph/${projectId}/edge`, { ...edge, id: edge.id });
     },
 
-    updateEdge: (roomId: string, edge: EdgeData) => {
-        return apiClient.put<ApiResponse>(`/graph/${roomId}/edge`, { ...edge, id: edge.id });
+    updateEdge: (projectId: string, edge: EdgeData) => {
+        return apiClient.put<ApiResponse>(`/graph/${projectId}/edge/${edge.id}`, { ...edge, id: edge.id });
     },
 
-    deleteEdge: (roomId: string, edgeId: string) => {
-        return apiClient.delete<ApiResponse>(`/graph/${roomId}/edge/${edgeId}`);
+    deleteEdge: (projectId: string, edgeId: string) => {
+        return apiClient.delete<ApiResponse>(`/graph/${projectId}/edge/${edgeId}`);
     },
 
-    addComment: (roomId: string, comment: Comment) => {
-        return apiClient.put<ApiResponse>(`/graph/${roomId}/comment`, { ...comment, id: comment.id });
+    addComment: (projectId: string, comment: Comment) => {
+        return apiClient.post<ApiResponse>(`/graph/${projectId}/comment`, { ...comment, id: comment.id });
     },
 
-    updateComment: (roomId: string, comment: Comment) => {
-        return apiClient.put<ApiResponse>(`/graph/${roomId}/comment`, { ...comment, id: comment.id });
+    updateComment: (projectId: string, comment: Comment) => {
+        return apiClient.put<ApiResponse>(`/graph/${projectId}/comment/${comment.id}`, { ...comment, id: comment.id });
     },
 
-    deleteComment: (roomId: string, commentId: string) => {
-        return apiClient.delete<ApiResponse>(`/graph/${roomId}/comment/${commentId}`);
+    deleteComment: (projectId: string, commentId: string) => {
+        return apiClient.delete<ApiResponse>(`/graph/${projectId}/comment/${commentId}`);
     },
 
-    updateConfig: (roomId: string, config: ProjectConfig) => {
-        return apiClient.put<ApiResponse>(`/graph/${roomId}/config`, { config });
+    updateConfig: (projectId: string, config: ProjectConfig) => {
+        return apiClient.put<ApiResponse>(`/graph/${projectId}/config`, { config });
     },
 
-    updateBackground: (roomId: string, color: string) => {
-        return apiClient.put<ApiResponse>(`/graph/${roomId}/background`, { color });
+    updateBackground: (projectId: string, color: string) => {
+        return apiClient.put<ApiResponse>(`/graph/${projectId}/background`, { color });
     },
 
-    clearHistory: (roomId: string) => {
-        return apiClient.delete<ApiResponse>(`/graph/${roomId}/history`);
+    clearHistory: (projectId: string) => {
+        return apiClient.delete<ApiResponse>(`/graph/${projectId}/history`);
     },
 
-    revertHistory: (roomId: string, historyId: string) => {
-        return apiClient.post<ApiResponse>(`/graph/${roomId}/history/${historyId}/revert`, {});
+    revertHistory: (projectId: string, historyId: string) => {
+        return apiClient.post<ApiResponse>(`/graph/${projectId}/history/${historyId}/revert`, {});
     }
 };

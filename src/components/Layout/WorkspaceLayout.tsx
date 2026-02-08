@@ -44,7 +44,7 @@ const SortableTab: React.FC<SortableTabProps> = ({ tab, isActive, onActivate, on
     transition,
   };
 
-  const displayTitle = tab.title !== 'New Tab' ? tab.title : (tab.roomId ? tab.roomId : 'New Tab');
+  const displayTitle = tab.title !== 'New Tab' ? tab.title : (tab.projectId ? tab.projectId : 'New Tab');
 
   return (
     <div
@@ -69,7 +69,7 @@ const SortableTab: React.FC<SortableTabProps> = ({ tab, isActive, onActivate, on
             ? 'bg-red-500 animate-pulse'
             : tab.isLive 
                 ? 'bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.4)]'
-                : tab.roomId 
+                : tab.projectId 
                     ? 'bg-indigo-400 dark:bg-indigo-500' 
                     : 'bg-gray-300 dark:bg-gray-600'
       }`} />
@@ -169,7 +169,7 @@ export const WorkspaceLayout: React.FC = () => {
                             We wrap EACH tab in its own GraphProvider.
                             This ensures separate state (nodes, socket connection) for each room.
                         */}
-                        <GraphProvider initialRoomId={tab.roomId || undefined} tabId={tab.id}>
+                        <GraphProvider initialProjectId={tab.projectId || undefined} tabId={tab.id}>
                             <ProjectSession tabId={tab.id} />
                         </GraphProvider>
                     </div>

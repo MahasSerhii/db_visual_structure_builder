@@ -6,6 +6,10 @@ export const authApi = {
         return apiClient.get<UserResponse>('/auth/user');
     },
 
+    verifyToken: () => {
+        return apiClient.get<UserResponse>('/auth/me');
+    },
+
     updateProfile: (data: UpdateProfileRequest) => {
         return apiClient.put<void>('/auth/profile', data);
     }

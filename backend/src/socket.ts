@@ -15,18 +15,16 @@ import User from './models/User';
 let io: Server;
 
 // Helper to get enriched sessions with Access info AND User info
-const getEnrichedSessions = async (roomId: string) => {
+const getEnrichedSessions = async (projectId: string) => {
     // 1. Get Active Socket Sessions
-    const sessions = await Session.find({ roomId });
+    const sessions = await Session.find({ projectId });
     
     try {
         let project = null;
-        if (mongoose.isValidObjectId(roomId)) {
-             project = await Project.findById(roomId);
+        if (mongoose.isValidObjectId(projectId)) {
+             project = await Project.findById(projectId);
         }
-        if (!project) {
-             project = await Project.findOne({ roomId });
-        }
+        // Legacy fallback removed
         
         const sessionUserIds = sessions.map(s => s.userId).filter(id => !!id);
         
@@ -107,32 +105,30 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
     io.on('connection', (socket: Socket) => {
         console.log('Client connected', socket.id);
 
-        socket.on('join-room', async (data: { roomId: string, userName: string, userColor: string, userId?: string, isVisible?: boolean, userEmail?: string, force?: boolean }) => {
-            const { roomId, userId, userName, userColor, isVisible, userEmail } = data;
+        socket.on('join-room', async (data: { projectId: string, userName: string, userColor: string, userId?: string, isVisible?: boolean, userEmail?: string, force?: boolean }) => {
+            const { projectId, userId, userName, userColor, isVisible, userEmail } = data;
  
             // Resolve Canonical Project ID for Room Name
-            let canonicalRoomId = roomId;
+            let canonicalProjectId = projectId;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let project: any = null;
 
             try {
-                if (mongoose.Types.ObjectId.isValid(roomId)) {
-                    project = await Project.findById(roomId);
-                } else {
-                    project = await Project.findOne({ roomId });
+                if (mongoose.Types.ObjectId.isValid(projectId)) {
+                    project = await Project.findOne({ _id: projectId, isDeleted: false });
                 }
 
                 if (project) {
-                    canonicalRoomId = project._id.toString();
+                    canonicalProjectId = project._id.toString();
                 } else {
-                    console.warn(`[Socket] Join Room: Project not found for ${roomId}`);
+                    console.warn(`[Socket] Join Room: Project not found for ${projectId}`);
                 }
             } catch (e) {
                 console.error("[Socket] Join Room Resolution Error", e);
             }
 
-            socket.join(canonicalRoomId);
-            console.log(`Socket ${socket.id} joined room ${canonicalRoomId} (Input: ${roomId})`);
+            socket.join(canonicalProjectId);
+            console.log(`Socket ${socket.id} joined room ${canonicalProjectId} (Input: ${projectId})`);
 
             // Validate/Resolve User ID
             let resolvedUserId: mongoose.Types.ObjectId | undefined = undefined;
@@ -156,21 +152,21 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                  }
             }
             
-            console.log(`[Socket] Join Room: ${canonicalRoomId}, Socket: ${socket.id}, InputID: ${userId}, ResolvedID: ${resolvedUserId}`);
+            console.log(`[Socket] Join Room: ${canonicalProjectId}, Socket: ${socket.id}, InputID: ${userId}, ResolvedID: ${resolvedUserId}`);
 
             // Save Session
             try {
                 // Eliminate duplicates by userId if present (optional logic)
                 if (resolvedUserId) {
                      // Check for existing sessions
-                     const oldSessions = await Session.find({ roomId: canonicalRoomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
+                     const oldSessions = await Session.find({ projectId: canonicalProjectId, userId: resolvedUserId, socketId: { $ne: socket.id } });
                      
                      if (oldSessions.length > 0) {
                         
                         if (!data.force) {
                             console.log(`[Socket] Conflict detected for user ${resolvedUserId}. Emitting session:conflict.`);
                             socket.emit('session:conflict', { message: "Only one connection for one user available in this room." });
-                            socket.leave(canonicalRoomId); // Ensure it's not subscribed
+                            socket.leave(canonicalProjectId); // Ensure it's not subscribed
                             return;
                         }
 
@@ -182,7 +178,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                                 message: "You have been disconnected because this room was opened in another tab."
                             });
                         }
-                        await Session.deleteMany({ roomId: canonicalRoomId, userId: resolvedUserId, socketId: { $ne: socket.id } });
+                        await Session.deleteMany({ projectId: canonicalProjectId, userId: resolvedUserId, socketId: { $ne: socket.id } });
                      }
                 }
 
@@ -190,7 +186,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                     { socketId: socket.id },
                     { 
                         socketId: socket.id, 
-                        roomId: canonicalRoomId, // Store Canonical ID (Mongo _id)
+                        projectId: canonicalProjectId, // Store Canonical ID (Mongo _id)
                         userId: resolvedUserId, // Now safely ObjectId or undefined
                         userName,
                         userColor,
@@ -215,9 +211,9 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                 }
 
                 // Broadcast active users
-                const users = await getEnrichedSessions(canonicalRoomId);
+                const users = await getEnrichedSessions(canonicalProjectId);
 
-                io.to(canonicalRoomId).emit('presence:update', users);
+                io.to(canonicalProjectId).emit('presence:update', users);
             } catch(e) { console.error("Session Save Error", e); }
         });
 
@@ -229,7 +225,7 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                     if (session.userId) {
                         // Logged in user: Remove ALL sessions for this user across all tabs
                         const userSessions = await Session.find({ userId: session.userId });
-                        const activeRooms = [...new Set(userSessions.map(s => s.roomId))];
+                        const activeRooms = [...new Set(userSessions.map(s => s.projectId))];
                         
                         // Force Logout for all user sockets
                         const userSocketIds = userSessions.map(s => s.socketId);
@@ -249,22 +245,26 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                     } else {
                         // Guest: Remove only this session
                         await Session.deleteOne({ socketId: socket.id });
-                        const users = await getEnrichedSessions(session.roomId);
+                        const users = await getEnrichedSessions(session.projectId);
 
-                        io.to(session.roomId).emit('presence:update', users);
+                        io.to(session.projectId).emit('presence:update', users);
                     }
                 }
             } catch(e) { console.error("Logout Cleanup Error", e); }
         });
 
-        socket.on('user:visibility', async (data: { roomId: string, isVisible: boolean }) => {
-            const { roomId, isVisible } = data;
+        socket.on('user:visibility', async (data: { projectId: string, isVisible: boolean }) => {
+            const { projectId, isVisible } = data;
 
             try {
                 const session = await Session.findOne({ socketId: socket.id });
 
                 if (session && session.userId) {
-                    const project = await Project.findOne({ roomId });
+                    let project = null;
+                    if (mongoose.isValidObjectId(projectId)) {
+                         project = await Project.findOne({ _id: projectId });
+                    }
+                    // Legacy fallback removed
 
                     if (project) {
                          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -281,19 +281,19 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                     console.warn(`Cannot update visibility: No User ID for socket ${socket.id}`);
                 }
 
-                const users = await getEnrichedSessions(roomId);
+                const users = await getEnrichedSessions(projectId);
 
-                io.to(roomId).emit('presence:update', users);
+                io.to(projectId).emit('presence:update', users);
             } catch(e) { console.error("Visibility Update Error", e); }
         });
 
-        socket.on('leave-room', async (roomId: string) => {
-            socket.leave(roomId);
+        socket.on('leave-room', async (projectId: string) => {
+            socket.leave(projectId);
             try {
                 await Session.deleteOne({ socketId: socket.id });
-                const users = await getEnrichedSessions(roomId);
+                const users = await getEnrichedSessions(projectId);
 
-                io.to(roomId).emit('presence:update', users);
+                io.to(projectId).emit('presence:update', users);
             } catch (e) {
                 console.error("Leave Room Error", e);
             }
@@ -305,12 +305,12 @@ export const initSocket = (httpServer: HttpServer, corsOrigin: string) => {
                 const session = await Session.findOne({ socketId: socket.id });
 
                 if (session) {
-                    const { roomId } = session;
+                    const { projectId } = session;
 
                     await Session.deleteOne({ socketId: socket.id });
-                    const users = await getEnrichedSessions(roomId);
+                    const users = await getEnrichedSessions(projectId);
 
-                    io.to(roomId).emit('presence:update', users);
+                    io.to(projectId).emit('presence:update', users);
                 }
             } catch(e) { console.error('Disconnect error', e); }
         });

@@ -7,7 +7,7 @@ import { SavedProject } from '../../../utils/types';
 
 
 export const ConnectTab: React.FC = () => {
-    const { nodes, addEdge, t, savedProjects, currentRoomId, setCurrentRoomId } = useGraph();
+    const { nodes, addEdge, t, savedProjects, currentProjectId, setCurrentProjectId } = useGraph();
     const { tabs, setActiveTabId } = useWorkspace();
     const { showToast } = useToast();
 
@@ -22,20 +22,20 @@ export const ConnectTab: React.FC = () => {
 
     const handleOpenProject = (project: SavedProject) => {
         // Duplicate Check
-        const existingTab = tabs.find(t => t.roomId === project.id);
-        if (existingTab && existingTab.roomId !== currentRoomId) {
+        const existingTab = tabs.find(t => t.projectId === project.id);
+        if (existingTab && existingTab.projectId !== currentProjectId) {
              showToast(t('toast.project.open'), 'info');
              setActiveTabId(existingTab.id);
              return;
         }
 
         // Optimistic switch
-        setCurrentRoomId(project.id);
+        setCurrentProjectId(project.id);
         // Socket in GraphContext deals with connection
     };
 
 
-    const isConnected = (id: string) => id === currentRoomId;
+    const isConnected = (id: string) => id === currentProjectId;
 
     const sourceNode = nodes.find(n => n.id === source);
     const sourcePropsList = sourceNode?.props || [];

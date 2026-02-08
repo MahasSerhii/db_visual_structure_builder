@@ -9,7 +9,7 @@ import { sendEmail } from '../utils/email';
 import { JWT_SECRET, CLIENT_URL } from '../config';
 import { catchAsync } from '../middleware/errorMiddleware';
 import { NotFoundException, BadRequestException, UnauthorizedException } from '../exceptions/HttpExceptions';
-import { t } from '../utils/i18n';
+import { t, getLanguageFromRequest } from '../utils/i18n';
 import { UserRole } from '../types/enums';
 
 interface UserPayload extends JwtPayload {
@@ -19,21 +19,25 @@ interface UserPayload extends JwtPayload {
 
 export const inviteUser = catchAsync(async (req: Request, res: Response) => {
     // try { // Removing legacy try-catch
-        const { email, roomId, configStr, permissions, hostName, projectName, origin } = req.body;
+        const { email, projectId, configStr, permissions, hostName, projectName, origin } = req.body;
 
-        console.log(`[Invite START] Email: ${email}, RoomId: ${roomId}, Permissions: ${permissions}`);
+        console.log(`[Invite START] Email: ${email}, ProjectID: ${projectId}, Permissions: ${permissions}`);
         
         const inviteToken = jwt.sign({ 
-            email, roomId, configStr, permissions, projectName, hostName, 
+            email, projectId, configStr, permissions, projectName, hostName, 
             origin: origin || CLIENT_URL
         }, JWT_SECRET, { expiresIn: '7d' });
 
-        const project = await Project.findOne({ roomId });
-
+        // Logic updated: FIND BY _ID ONLY
+        let project = null;
+        if (mongoose.isValidObjectId(projectId)) {
+             project = await Project.findOne({ _id: projectId });
+        }
+        
         console.log(`[Invite] Project lookup result:`, project ? `Found (ID: ${project._id})` : 'NOT FOUND');
         
         if (!project) {
-            console.error(`[Invite ERROR] Project with roomId "${roomId}" not found in database!`);
+            console.error(`[Invite ERROR] Project with ID "${projectId}" not found in database!`);
             return res.status(404).json({ error: "Project not found. Please ensure the room exists." });
         }
         
@@ -116,10 +120,10 @@ export const inviteUser = catchAsync(async (req: Request, res: Response) => {
 export const validateInvite = catchAsync(async (req: Request, res: Response) => {
     const token = req.query.token as string;
 
-    if (!token) throw new BadRequestException(t(undefined, "error.auth.invalid_token"));
+    if (!token) throw new BadRequestException(t(getLanguageFromRequest(req), "error.auth.invalid_token"));
     
     // Explicitly verify or let generic error handler catch JsonWebTokenError
-    const decoded = jwt.verify(token, JWT_SECRET) as UserPayload & { roomId: string, configStr: string, permissions: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as UserPayload & { projectId: string, configStr: string, permissions: string };
     
     const existingUser = await User.findOne({ email: decoded.email });
 
@@ -127,7 +131,7 @@ export const validateInvite = catchAsync(async (req: Request, res: Response) => 
         valid: true,
         email: decoded.email,
         isRegistered: !!existingUser,
-        roomId: decoded.roomId,
+        projectId: decoded.projectId, 
         configStr: decoded.configStr,
         permissions: decoded.permissions
     });
@@ -155,7 +159,7 @@ export const register = catchAsync(async (req: Request, res: Response) => {
                  console.error("Failed to send restoration email", mailErr);
              }
              
-             throw new BadRequestException(t(undefined, "error.auth.email_exists"));
+             throw new BadRequestException(t(getLanguageFromRequest(req), "error.auth.email_exists"));
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -186,10 +190,14 @@ export const register = catchAsync(async (req: Request, res: Response) => {
         if (inviteToken && typeof inviteToken === 'string' && user) {
             try {
                 console.log("Processing invite token...");
-                const decoded = jwt.verify(inviteToken, JWT_SECRET) as UserPayload & { roomId: string };
+                const decoded = jwt.verify(inviteToken, JWT_SECRET) as UserPayload & { projectId: string };
 
-                if (decoded.roomId) {
-                     const project = await Project.findOne({ roomId: decoded.roomId });
+                if (decoded.projectId) {
+                     let project = null;
+                     if (mongoose.isValidObjectId(decoded.projectId)) {
+                         project = await Project.findOne({ _id: decoded.projectId });
+                     }
+
                      if (project) {
                         // Logic for invites already handles access creation. 
                         // But good to double check if needed.
@@ -234,12 +242,14 @@ export const login = catchAsync(async (req: Request, res: Response) => {
         const { email, password, rememberMe, name, color } = req.body;
         const user = await User.findOne({ email });
         
-        // We can pass user language here if we find the user
-        if (!user) throw new NotFoundException(t(undefined, "error.auth.user_not_found"));
+        // Use browser language if user not found, otherwise user's preferred language
+        const lang = user ? user.language : getLanguageFromRequest(req);
+
+        if (!user) throw new NotFoundException(t(lang, "error.auth.user_not_found"));
 
         const isMatch = await bcrypt.compare(password, user.password || '');
 
-        if (!isMatch) throw new UnauthorizedException(t(user.language, "error.auth.wrong_password"));
+        if (!isMatch) throw new UnauthorizedException(t(lang, "error.auth.wrong_password"));
         
         if (!user.authorized) {
             user.authorized = true;
@@ -264,7 +274,7 @@ export const login = catchAsync(async (req: Request, res: Response) => {
         
         const projects = [
             ...ownedProjects.map(p => ({
-                id: p._id.toString(), roomId: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
+                id: p._id.toString(), projectId: p._id.toString(), roomId: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
             ...accessRecords
                 .filter((record: any) => record.projectId)
@@ -273,9 +283,12 @@ export const login = catchAsync(async (req: Request, res: Response) => {
                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
                  // @ts-ignore
                  const u = a.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
+                 // a.projectId is a populated object here.
+                 // We need to access _id from it.
+                 const pId = a.projectId._id.toString(); 
 
                  return {
-                    id: a.projectId._id.toString(), roomId: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
+                    id: pId, projectId: pId, roomId: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
                  };
             })
         ];
@@ -299,7 +312,7 @@ export const login = catchAsync(async (req: Request, res: Response) => {
 
 export const verifyAccess = async (req: Request, res: Response) => {
     try {
-       const { token, roomId } = req.body;
+       const { token, projectId } = req.body;
 
        if (!token) return res.json({ allowed: false });
 
@@ -317,12 +330,10 @@ export const verifyAccess = async (req: Request, res: Response) => {
        if (!user) return res.json({ allowed: false });
        
        let project = null;
-       if (mongoose.isValidObjectId(roomId)) {
-            project = await Project.findOne({ _id: roomId, isDeleted: false });
+       if (mongoose.isValidObjectId(projectId)) {
+            project = await Project.findOne({ _id: projectId, isDeleted: false });
        }
-       if (!project) {
-            project = await Project.findOne({ roomId, isDeleted: false });
-       }
+       // Legacy fallback removed
 
        // If project does not exist yet, and we have a valid user, they might be about to create it.
        // Allow them to proceed so they can hit the /init endpoint.
@@ -475,7 +486,8 @@ export const getUser = async (req: Request, res: Response) => {
         const projects = [
             ...ownedProjects.map(p => ({
                 id: p._id.toString(), 
-                roomId: p.roomId, 
+                projectId: p._id.toString(), 
+                roomId: p.roomId, // Added back for display/legacy
                 name: p.name, 
                 role: 'owner', 
                 author: user.name, 
@@ -483,7 +495,7 @@ export const getUser = async (req: Request, res: Response) => {
             })),
             ...accessRecords.map((record) => {
                  const a = record as unknown as (IAccess & { projectId: IProject, authorId: { name: string } });
-                 if(!a.projectId || !a.projectId.roomId) {
+                 if(!a.projectId || !a.projectId._id) {
                      return null;
                  }
                  
@@ -494,10 +506,12 @@ export const getUser = async (req: Request, res: Response) => {
                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
                  // @ts-ignore
                  const authorName = a.authorId ? a.authorId.name : 'Unknown';
+                 const pId = a.projectId._id.toString();
 
                  return {
-                    id: a.projectId._id.toString(), 
-                    roomId: a.projectId.roomId,
+                    id: pId, 
+                    projectId: pId,
+                    roomId: a.projectId.roomId, // Added back
                     name: a.projectId.name, 
                     role: u ? u.role : 'Viewer', 
                     author: authorName, 
@@ -571,9 +585,31 @@ export const socialLogin = async (req: Request, res: Response) => {
         
         if (inviteToken) {
              try {
-                const decoded = jwt.verify(inviteToken, JWT_SECRET) as UserPayload & { roomId: string };
-                if (decoded.roomId) {
-                     // handled
+                const decoded = jwt.verify(inviteToken, JWT_SECRET) as UserPayload & { projectId: string };
+                if (decoded.projectId) {
+                     // logic handled or access auto-added elsewhere?
+                     // social login usually just creates user, then client might call join/init.
+                     // But if we want to link automatically:
+                     if (mongoose.isValidObjectId(decoded.projectId)) {
+                        const project = await Project.findOne({ _id: decoded.projectId });
+                        if (project) {
+                             await Access.updateOne(
+                                { projectId: project._id },
+                                { 
+                                    $addToSet: { 
+                                        access_granted: { 
+                                            userId: user._id, 
+                                            role: 'viewer', 
+                                            invitedBy: 'system',
+                                            invitedEmail: email,
+                                            joinedAt: new Date()
+                                        } 
+                                    } 
+                                },
+                                { upsert: true }
+                             );
+                        }
+                     }
                 }
             } catch(e) { void e; }
         }
@@ -591,7 +627,7 @@ export const socialLogin = async (req: Request, res: Response) => {
         
         const projects = [
             ...ownedProjects.map(p => ({
-                id: p._id.toString(), roomId: p.roomId, name: p.name, role: 'owner', lastAccessed: p.updatedAt
+                id: p._id.toString(), projectId: p._id.toString(), name: p.name, role: 'owner', lastAccessed: p.updatedAt
             })),
             ...accessRecords
                 .filter((record: any) => record.projectId)
@@ -601,8 +637,10 @@ export const socialLogin = async (req: Request, res: Response) => {
                  // @ts-ignore 
                  const u = a.access_granted.find((participant) => participant.userId.toString() === user!._id.toString());
 
+                 const pId = a.projectId._id.toString(); 
+
                  return {
-                    id: a.projectId._id.toString(), roomId: a.projectId.roomId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
+                    id: pId, projectId: pId, name: a.projectId.name, role: u ? u.role : 'Viewer', lastAccessed: a.updatedAt
                  };
             })
         ];

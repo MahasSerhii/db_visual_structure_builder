@@ -10,7 +10,7 @@ export interface ProjectConfig {
 
 export interface IProject extends Document {
   _id: mongoose.Types.ObjectId;
-  roomId: string;
+  roomId: string; // Identifier for display only
   name: string;
   ownerId: mongoose.Types.ObjectId;
   description?: string;
