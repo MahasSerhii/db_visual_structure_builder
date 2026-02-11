@@ -145,7 +145,7 @@ export const register = catchAsync(async (req: Request, res: Response) => {
 
         let user = await User.findOne({ email });
 
-        if (user && user.authorized) {
+        if (user && user.authorized && user.password) {
              console.log(`[Register] User exists: ${email}`);
              const resetToken = jwt.sign({ email: user.email, type: 'reset' }, JWT_SECRET, { expiresIn: '1h' });
              const link = `${CLIENT_URL}?reset_token=${resetToken}`;
@@ -243,11 +243,11 @@ export const login = catchAsync(async (req: Request, res: Response) => {
         const user = await User.findOne({ email });
         
         // Use browser language if user not found, otherwise user's preferred language
-        const lang = user ? user.language : getLanguageFromRequest(req);
+        const lang = (user && user.password) ? user.language : getLanguageFromRequest(req);
 
-        if (!user) throw new NotFoundException(t(lang, "error.auth.user_not_found"));
+        if (!user || !user.password) throw new NotFoundException(t(lang, "error.auth.user_not_found"));
 
-        const isMatch = await bcrypt.compare(password, user.password || '');
+        const isMatch = await bcrypt.compare(password, user.password!);
 
         if (!isMatch) throw new UnauthorizedException(t(lang, "error.auth.wrong_password"));
         
