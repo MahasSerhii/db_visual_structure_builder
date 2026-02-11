@@ -1,0 +1,27 @@
+//To instal firebase we need to run:
+npm install -g firebase-tools
+// To validate we need to run:
+firebase --version
+//Login to Firebase
+//Run this command in your terminal and follow the instructions to sign in with your Google account in the browser:
+firebase login
+//Initialize the Project
+//Once logged in, run this command to set up the hosting:
+firebase init hosting
+//When asked, choose these options:
+"Are you ready to proceed?": Type y and press Enter.
+"Please select an option": Choose "Use an existing project" (if you created one on the Firebase website) or "Create a new project".
+"What do you want to use as your public directory?": Type . (a single dot) and press Enter. This tells Firebase your index.html is in the current folder.
+"Configure as a single-page app (rewrite all urls to /index.html)?": Type y and press Enter.
+"Set up automatic builds and deploys with GitHub?": Type n and press Enter (unless you want that).
+"File index.html already exists. Overwrite?": IMPORTANT: Type n (No) and press Enter so you don't lose your work.
+//Deploy, publish your app to the internet:
+firebase deploy
+//To update live website with new changes, just need to redeploy. Since app aren't using Git (version control) in this folder yet, "committing" in this context usually just means pushing our changes to the server.
+//Edit our index.html file and save the changes.
+//Run this command in our terminal:
+firebase deploy
+
+
+
+
