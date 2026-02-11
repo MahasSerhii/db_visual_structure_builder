@@ -243,6 +243,7 @@ export const login = catchAsync(async (req: Request, res: Response) => {
         const user = await User.findOne({ email });
         
         // Use browser language if user not found, otherwise user's preferred language
+        // Invited users might exist but have no password set. Treat them as not found for login purposes.
         const lang = (user && user.password) ? user.language : getLanguageFromRequest(req);
 
         if (!user || !user.password) throw new NotFoundException(t(lang, "error.auth.user_not_found"));
